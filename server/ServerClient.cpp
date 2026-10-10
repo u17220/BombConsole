@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 Client::Client(int ss_, void (**onReceive_)(Client *c, uint8_t *receive_data, int len)):
@@ -49,6 +50,7 @@ int Client::getSocket(){
 Server::Server(uint16_t port){
     s = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));   // sin_len / sin_zero must be zero on BSD / macOS
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);   

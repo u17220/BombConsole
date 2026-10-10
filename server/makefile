@@ -1,6 +1,11 @@
 all: A_server
 CPPFLAGS :=-O3 -std=c++11 -Wall
+ifeq ($(shell uname -s),Darwin)
+# macOS: libncurses is already wide-character capable (no libncursesw)
+LDFLAGS :=-lncurses -lpthread
+else
 LDFLAGS :=-lncursesw -lpthread
+endif
 SRCS := SquareObject.cpp Block.cpp Player.cpp Bomb.cpp Fire.cpp ServerClient.cpp
 OBJS := $(SRCS:%.cpp=%.o)
 DEPS := $(SRCS:%.cpp=%.d)
