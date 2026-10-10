@@ -71,6 +71,7 @@ class Game{
     bool isOver() const { return over; }
     int tickCount() const { return ticks; }
     double secondsLeft() const;     // < 0 when there is no limit
+    bool suddenDeath() const { return sd_start_tick > 0 && ticks >= sd_start_tick; }
 
     int width() const { return w; }
     int height() const { return h; }
@@ -98,6 +99,7 @@ class Game{
     void buildMap(int n);
     void placePlayer(GamePlayer &p, int seat, int n);
     void placeSoftBlocks();
+    void buildSuddenDeathOrder();
     GamePlayer *find(int id);
     bool blocked(int x, int y) const;   // cannot walk into
     bool bombAt(int x, int y) const;
@@ -121,6 +123,11 @@ class Game{
     int over_tick = -1;         // tick when the round ends (set once <= 1 player is alive)
     bool over = false;
     bool timeout = false;
+    // sudden death: squares in closing order (outer ring first, clockwise), next index
+    std::vector<std::pair<int, int>> sd_order;
+    size_t sd_next = 0;
+    int sd_start_tick = 0;      // tick when the walls start closing (0 = never)
+    int sd_interval = 5;        // ticks between two closings
 };
 
 #endif

@@ -60,6 +60,7 @@ bool Config::set(const std::string &key, const std::string &value, std::string &
     else if(key == "dying") ok = toDouble(value, dying);
     else if(key == "time") ok = toDouble(value, time_limit);
     else if(key == "sudden-death" || key == "sudden_death") ok = toDouble(value, sudden_death);
+    else if(key == "sd-rate" || key == "sd_rate") ok = toDouble(value, sd_rate);
     else if(key == "soft") ok = toInt(value, soft_pct);
     else if(key == "soft-2p" || key == "soft_2p") ok = toInt(value, soft_pct_2p);
     else if(key == "item") ok = toInt(value, item_pct);
@@ -184,15 +185,16 @@ std::string Config::usage(){
     "  --max-players N   players per round, the rest spectate (8)\n"
     "  --autostart N     start as soon as N players joined (0 = wait for ready)\n"
     "  --tick MS         tick length in ms (50)\n"
-    "  --fuse S          bomb fuse in seconds (2.0)\n"
-    "  --fire S          fire duration in seconds (1.0)\n"
-    "  --bombs N         initial bombs at once (4), --bombs-max N (6)\n"
-    "  --power N         initial fire length (3), --power-max N (8)\n"
+    "  --fuse S          bomb fuse in seconds (2.5)\n"
+    "  --fire S          fire duration in seconds (0.5)\n"
+    "  --bombs N         initial bombs at once (1), --bombs-max N (6)\n"
+    "  --power N         initial fire length (2), --power-max N (8)\n"
     "  --speed N         ticks per square (5), --speed-min N (3)\n"
     "  --dying S         death animation in seconds (1.0)\n"
-    "  --time S          round time limit in seconds (0 = none)\n"
-    "  --sudden-death S  seconds before the end when walls close in (0 = off)\n"
-    "  --soft PCT        soft block density in percent (60), --soft-2p PCT for 2 players (50)\n"
+    "  --time S          round time limit in seconds (120, 0 = none)\n"
+    "  --sudden-death S  seconds before the end when walls close in (30, 0 = off)\n"
+    "  --sd-rate N       squares closed per second in sudden death (4)\n"
+    "  --soft PCT        soft block density in percent (60), --soft-2p PCT for 2 players (soft-10)\n"
     "  --item PCT        chance that a soft block drops an item (35)\n"
     "  --item-fire N --item-bomb N --item-speed N   item ratio (45:35:20)\n"
     "  --legacy-map      v1 square map 4*ceil(sqrt(n))-1 instead of the presets by player count\n";

@@ -10,6 +10,10 @@ Game::Game(const Config &cfg_, unsigned seed) : cfg(cfg_), rng(seed){
     fire_ticks = std::max(1, (int)lround(cfg.fire * 1000.0 / cfg.tick_ms));
     dying_ticks = std::max(1, (int)lround(cfg.dying * 1000.0 / cfg.tick_ms));
     limit_ticks = cfg.time_limit > 0 ? (int)lround(cfg.time_limit * 1000.0 / cfg.tick_ms) : 0;
+    if(limit_ticks > 0 && cfg.sudden_death > 0 && cfg.sd_rate > 0){
+        sd_start_tick = std::max(1, limit_ticks - (int)lround(cfg.sudden_death * 1000.0 / cfg.tick_ms));
+        sd_interval = std::max(1, (int)lround(1000.0 / cfg.tick_ms / cfg.sd_rate));
+    }
 }
 
 const char *Game::causeName(Cause c){
@@ -75,7 +79,9 @@ void Game::placePlayer(GamePlayer &p, int seat, int n){
 }
 
 void Game::placeSoftBlocks(){
-    int pct = ps.size() <= 2 ? cfg.soft_pct_2p : cfg.soft_pct;
+    int pct = cfg.soft_pct;
+    if(ps.size() <= 2)
+        pct = cfg.soft_pct_2p >= 0 ? cfg.soft_pct_2p : std::max(0, cfg.soft_pct - 10);
     if(pct <= 0)
         return;
     // protect the start squares and their neighbours so that everybody can move and hide
@@ -122,6 +128,33 @@ void Game::start(const std::vector<std::pair<int, std::string>> &players){
         ps.push_back(p);
     }
     placeSoftBlocks();
+    buildSuddenDeathOrder();
+}
+
+void Game::buildSuddenDeathOrder(){
+    // ring by ring from the outside, clockwise from the top-left of each ring
+    sd_order.clear();
+    sd_next = 0;
+    for(int k = 1; k < std::min(w, h) / 2 + 1; k++){
+        int x0 = k, y0 = k, x1 = w - 1 - k, y1 = h - 1 - k;
+        if(x0 > x1 || y0 > y1)
+            break;
+        std::vector<std::pair<int, int>> ring;
+        for(int x = x0; x <= x1; x++) ring.push_back(std::make_pair(x, y0));
+        for(int y = y0 + 1; y <= y1; y++) ring.push_back(std::make_pair(x1, y));
+        if(y1 > y0)
+            for(int x = x1 - 1; x >= x0; x--) ring.push_back(std::make_pair(x, y1));
+        if(x1 > x0)
+            for(int y = y1 - 1; y > y0; y--) ring.push_back(std::make_pair(x0, y));
+        if(k == 1 && !ring.empty()){
+            // start the outer ring at a random point so that no seat is always crushed first
+            std::uniform_int_distribution<size_t> off(0, ring.size() - 1);
+            std::rotate(ring.begin(), ring.begin() + (long)off(rng), ring.end());
+        }
+        for(auto &c : ring)
+            if(grid[c.second][c.first].kind != '#')
+                sd_order.push_back(c);
+    }
 }
 
 GamePlayer *Game::find(int id){
@@ -263,7 +296,31 @@ void Game::dropItem(int x, int y){
 }
 
 void Game::advanceSuddenDeath(){
-    // introduced in stage 1
+    if(sd_start_tick <= 0 || ticks < sd_start_tick || sd_next >= sd_order.size())
+        return;
+    if((ticks - sd_start_tick) % sd_interval != 0)
+        return;
+    int x = sd_order[sd_next].first, y = sd_order[sd_next].second;
+    sd_next++;
+    Cell &c = grid[y][x];
+    c.kind = '#';
+    c.item = 0;
+    c.fire_until = 0;
+    // a bomb under the wall is removed (its owner gets it back)
+    for(size_t i = 0; i < bs.size(); ){
+        if(bs[i].x == x && bs[i].y == y){
+            if(GamePlayer *o = find(bs[i].owner))
+                o->bombs_placed = std::max(0, o->bombs_placed - 1);
+            bs.erase(bs.begin() + (long)i);
+        }
+        else
+            i++;
+    }
+    // players on the square are crushed in step 3 of the next tick; do it now so that
+    // the wall and the death appear together
+    for(GamePlayer &p : ps)
+        if(p.alive() && p.x == x && p.y == y)
+            kill(p, Cause::SUDDEN_DEATH, -1);
 }
 
 void Game::tick(){
@@ -340,7 +397,9 @@ void Game::tick(){
         bs.swap(rest);
     }
 
-    // 3. items, fire and walls kill
+    // 3. sudden death closes one square, then items, fire and walls
+    if(limit_ticks > 0)
+        advanceSuddenDeath();
     for(GamePlayer &p : ps){
         if(!p.alive())
             continue;
@@ -368,9 +427,8 @@ void Game::tick(){
         if(p.st == GamePlayer::St::DYING && ticks >= p.dying_until)
             p.st = GamePlayer::St::DEAD;
 
-    // 5. time limit and sudden death
+    // 5. time limit
     if(limit_ticks > 0){
-        advanceSuddenDeath();
         if(ticks >= limit_ticks && !timeout && over_tick < 0){
             timeout = true;
             over_tick = ticks + dying_ticks;
@@ -457,6 +515,7 @@ std::string Game::startJson(int round, int rounds) const{
 std::string Game::stateJson() const{
     std::string s = "{\"t\":\"state\",\"tick\":" + json::num(ticks)
         + ",\"left\":" + json::num(secondsLeft())
+        + ",\"sd\":" + json::boolean(suddenDeath())
         + ",\"map\":" + rowsJson(mapRows())
         + ",\"players\":[";
     for(size_t i = 0; i < ps.size(); i++){
