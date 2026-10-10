@@ -1,6 +1,7 @@
 #include <ncurses.h>
 #include <locale.h>
 #include <vector>
+#include <atomic>
 #include <thread>
 #include <mutex>
 #include <unistd.h>
@@ -17,15 +18,6 @@
 
 std::mutex mtx;
 
-std::list<SquareObject*> SquareObject::object_list;
-std::vector<std::vector<uint8_t>> SquareObject::square_map;
-std::vector<std::vector<uint8_t>> SquareObject::square_map_p;
-int SquareObject::MAP_SIZE_X;
-int SquareObject::MAP_SIZE_Y;
-timespec SquareObject::current_time;
-std::unordered_map<int, Player*> Player::id_Player;
-std::vector<Player*> Player::death;
-std::unordered_set<Player*> Player::living;
 
 
 Player *gm;
@@ -78,9 +70,12 @@ int main(void){
     server.onConnect = [](Client *c){
         Player *p = new Player(c->getSocket());
         p->moveTo(3, 3);
+        return true;
     };
 
     server.onReceive = [](Client *c, uint8_t *receive_data, int len){
+        if(len < 3)
+            return;
         Player *p = Player::find(c->getSocket());
         int x = receive_data[0];
         int y = receive_data[1];
@@ -91,7 +86,7 @@ int main(void){
     };
 
     // wait client
-    server.waitClients();
+    while(server.waitClients() == nullptr);
 
     while(1){
         clear();

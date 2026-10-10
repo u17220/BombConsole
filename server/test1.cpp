@@ -1,6 +1,7 @@
 #include <ncurses.h>
 #include <locale.h>
 #include <vector>
+#include <atomic>
 #include <thread>
 #include <mutex>
 #include <unistd.h>
@@ -18,15 +19,6 @@
 
 std::mutex mtx;
 
-std::list<SquareObject*> SquareObject::object_list;
-std::vector<std::vector<uint8_t>> SquareObject::square_map;
-std::vector<std::vector<uint8_t>> SquareObject::square_map_p;
-int SquareObject::MAP_SIZE_X;
-int SquareObject::MAP_SIZE_Y;
-timespec SquareObject::current_time;
-std::unordered_map<int, Player*> Player::id_Player;
-std::vector<Player*> Player::death;
-std::unordered_set<Player*> Player::living;
 
 void make_map(){
     int i,j;
@@ -54,32 +46,33 @@ int main(void){
     start_color();
     color_init();
 
-    int num = 0;
 
     Server server(PORT);    
     server.onConnect = [](Client *c){
         new Player(c->getSocket());
+        return true;
     };
 
     server.onReceive = [](Client *c, uint8_t *receive_data, int len){
         Player *p = Player::find(c->getSocket());
-        strcpy(p->name, (const char *)receive_data); 
-        printw("%s\n", receive_data);
+        p->appendName(receive_data, len);
+        printw("%s\n", p->name);
     };
 
     // waiting Players
-    bool waitend = false;
+    std::atomic<bool> waitend(false);
     std::thread waitingPlayers([&waitend, &server](){
         while(!waitend)
             server.waitClients();
     });
     while(1){
         int key = getch();
-        if(key == 'g' && server.clients.size() != 0)
+        if(key == 'g' && server.clientCount() != 0)
             break;
         else if(key == 'q'){
+            waitend = true;
+            waitingPlayers.join();
             endwin();
-            waitingPlayers.detach();
             return 0;
         }
     }
@@ -95,7 +88,7 @@ int main(void){
     uint8_t send_data[4];
     uint8_t x_init = 1;
     uint8_t y_init = 1;
-    for(auto itr = server.clients.begin(); itr != server.clients.end(); itr++){
+    for(Client *c : server.getClients()){
         send_data[0] = x_init;
         send_data[1] = y_init;
         send_data[2] = map_size_x;
@@ -106,13 +99,13 @@ int main(void){
             x_init = 1;
             y_init += 4;
         }
-        itr->second->Send(send_data, sizeof(send_data)/sizeof(send_data[0]));
-        Player::death.push_back(Player::find(itr->second->getSocket()));    //for test
+        c->Send(send_data, sizeof(send_data)/sizeof(send_data[0]));
+        Player::death.push_back(Player::find(c->getSocket()));    //for test
     }
 
     // send ranking
     std::string ranking;
-    for(int rank = 0; rank < Player::death.size(); rank++){
+    for(size_t rank = 0; rank < Player::death.size(); rank++){
         Player *p = Player::death[rank];
         ranking += std::to_string(rank+1);
         ranking += "位 : ";
@@ -122,6 +115,6 @@ int main(void){
     server.broadcast((const uint8_t *)ranking.c_str(), ranking.length());
 
     endwin();
-    waitingPlayers.detach();
+    waitingPlayers.join();
     return 0;
 }
