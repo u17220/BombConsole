@@ -42,6 +42,7 @@ class Session{
     void handleLobbyLine(Client *c, const std::string &line);
     void handleHello(Client *c, const std::string &rest);
     void removeClient(Client *c);
+    bool isClosed(Client *c) const;
     Member *findMember(Client *c);
     std::string uniqueName(const std::string &base);
     std::string lobbyJson(int countdown) const;
@@ -60,6 +61,7 @@ class Session{
     std::map<int, int> kills_total;
     unsigned seed_base;
     std::vector<std::string> last_result;    // shown on the server screen
+    std::vector<Client*> closed_now;         // clients closed while handling the current batch of events
 };
 
 static std::string sanitizeName(std::string s){
@@ -123,6 +125,7 @@ void Session::handleHello(Client *c, const std::string &rest){
     if(proto != 1){
         c->send("{\"t\":\"error\",\"msg\":\"unsupported protocol\"}\n");
         server.closeClient(c);
+        closed_now.push_back(c);
         return;
     }
     Member m;
@@ -152,6 +155,11 @@ void Session::removeClient(Client *c){
         }
     }
     server.closeClient(c);
+    closed_now.push_back(c);
+}
+
+bool Session::isClosed(Client *c) const{
+    return std::find(closed_now.begin(), closed_now.end(), c) != closed_now.end();
 }
 
 void Session::handleLobbyLine(Client *c, const std::string &line){
@@ -250,9 +258,12 @@ void Session::run(){
         while(!g_stop){
             auto next = clock::now() + std::chrono::milliseconds(cfg.tick_ms);
             events.clear();
+            closed_now.clear();
             server.pollEvents(events);
             bool changed = !events.empty();
             for(NetEvent &e : events){
+                if(isClosed(e.client))
+                    continue;       // closed earlier in this batch (e.g. BYE then DISCONNECT)
                 if(e.type == NetEvent::LINE)
                     handleLobbyLine(e.client, e.line);
                 else if(e.type == NetEvent::DISCONNECT)
@@ -329,8 +340,11 @@ void Session::playRound(){
     while(!g_stop && !game.isOver()){
         next += std::chrono::milliseconds(cfg.tick_ms);
         events.clear();
+        closed_now.clear();
         server.pollEvents(events);
         for(NetEvent &e : events){
+            if(isClosed(e.client))
+                continue;
             if(e.type == NetEvent::DISCONNECT){
                 Member *m = findMember(e.client);
                 if(m != nullptr && m->playing)
