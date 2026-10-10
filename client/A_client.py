@@ -8,8 +8,10 @@ usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii]
             also works where broadcasts don't (VPN, guest Wi-Fi)
   --name    player name (default: $BOMBCONSOLE_NAME, then the login user name)
   --ascii   draw with ASCII characters only (2 columns per square)
+  --no-threat  start with the danger highlight off (t toggles it)
 
-keys: arrows / WASD / hjkl = move, Space or z = bomb, r = ready, q = quit
+keys: arrows / WASD / hjkl = move, Space or z = bomb, r = ready, q = quit,
+      t = toggle the danger highlight (squares the current bombs will reach)
 """
 import curses
 import getpass
@@ -30,7 +32,7 @@ DOUBLE_Q_SEC = 1.0      # press q twice within this time to quit during a round
 
 
 def parse_args(argv):
-    opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False}
+    opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False, "threat": True}
     env = os.environ.get("BOMBCONSOLE_SERVER")
     if env:
         opts["host"] = env
@@ -47,6 +49,8 @@ def parse_args(argv):
             opts["name"] = a.split("=", 1)[1]
         elif a == "--ascii":
             opts["ascii"] = True
+        elif a == "--no-threat":
+            opts["threat"] = False
         elif a == "--port" and i + 1 < len(argv):
             opts["port"] = int(argv[i + 1])
             i += 1
@@ -181,8 +185,9 @@ GLYPH_WIDE = {
 }
 GLYPH_ASCII = {c: c for c in "#+o*xFBS12345678 "}
 
-C_WALL, C_SOFT, C_BOMB, C_FIRE, C_ITEM, C_DYING, C_THREAT, C_HUD = range(1, 9)
+C_WALL, C_SOFT, C_BOMB, C_FIRE, C_ITEM, C_DYING, C_THREAT, C_HUD, C_BOMB_SOON = range(1, 10)
 C_PLAYER = 10   # + player id (0..7)
+C_PLAYER_THREAT = 20    # + player id, on a threatened square
 
 
 def init_colors():
@@ -200,12 +205,14 @@ def init_colors():
     curses.init_pair(C_FIRE, curses.COLOR_RED, bg)
     curses.init_pair(C_ITEM, curses.COLOR_GREEN, bg)
     curses.init_pair(C_DYING, curses.COLOR_MAGENTA, bg)
-    curses.init_pair(C_THREAT, curses.COLOR_WHITE, curses.COLOR_RED)
+    curses.init_pair(C_THREAT, curses.COLOR_YELLOW, curses.COLOR_RED)
     curses.init_pair(C_HUD, curses.COLOR_CYAN, bg)
+    curses.init_pair(C_BOMB_SOON, curses.COLOR_RED, bg)
     pc = [curses.COLOR_CYAN, curses.COLOR_GREEN, curses.COLOR_YELLOW, curses.COLOR_MAGENTA,
           curses.COLOR_RED, curses.COLOR_BLUE, curses.COLOR_WHITE, curses.COLOR_CYAN]
     for i in range(8):
         curses.init_pair(C_PLAYER + i, pc[i], bg)
+        curses.init_pair(C_PLAYER_THREAT + i, pc[i], curses.COLOR_RED)
 
 
 def attr(pair, extra=0):
@@ -244,6 +251,7 @@ class Client:
         self.last_q = 0
         self.dirty = True
         self.quit = False
+        self.show_threat = opts["threat"]
 
     # ---- messages from the server ----
 
@@ -324,6 +332,10 @@ class Client:
             self.conn.send("IN %s 0" % self.DIRS[c])
         elif c in (ord(" "), ord("z"), ord("Z")):
             self.conn.send("IN - 1")
+        elif c in (ord("t"), ord("T")):
+            self.show_threat = not self.show_threat
+            self.msg = "danger highlight %s" % ("on" if self.show_threat else "off")
+            self.dirty = True
 
     def toggle_ready(self):
         self.ready = not self.ready
@@ -395,52 +407,72 @@ class Client:
         me = players.get(self.me)
         # HUD (top)
         if me:
-            hud = "%s  bombs %d/%d  fire %d  spd %d" % (self.my_name[:8], me["bombs"], me["maxb"], me["fire"], me["spd"])
+            hud = "%-8s bomb %d/%d fire %d spd %d" % (self.my_name[:8], me["bombs"], me["maxb"], me["fire"], me["spd"])
         else:
             hud = "spectating"
         alive = sum(1 for p in st["players"] if p["st"] == "alive")
         hud += "  alive %d/%d" % (alive, len(st["players"]))
         if st.get("left", -1) >= 0:
-            hud += "  time %3.0f" % st["left"]
+            hud += "  time %3d" % int(st["left"] + 0.999)
+        if st.get("sd"):
+            hud += "  SUDDEN DEATH"
         put(scr, 0, 0, hud[:cols - 1], attr(C_HUD, curses.A_BOLD))
         if st.get("sd"):
-            put(scr, 0, min(len(hud) + 2, cols - 14), "SUDDEN DEATH", attr(C_FIRE, curses.A_BOLD | curses.A_BLINK))
+            put(scr, 0, hud.index("SUDDEN"), "SUDDEN DEATH", attr(C_FIRE, curses.A_BOLD | curses.A_BLINK))
         # map
         g = self.glyph
+        threat = st.get("threat") if self.show_threat else None
+        soon = set()
+        for b in st.get("bombs", []):
+            if b["fuse"] < 1.0:
+                soon.add((b["x"], b["y"]))
         for y, line in enumerate(st["map"]):
+            trow = threat[y] if threat and y < len(threat) else None
             for x, ch in enumerate(line):
+                danger = bool(trow and x < len(trow) and trow[x] == "!")
+                text = g.get(ch, ch)
                 a = 0
                 if ch == "#":
                     a = attr(C_WALL)
                 elif ch == "+":
                     a = attr(C_SOFT)
                 elif ch == "o":
-                    a = attr(C_BOMB, curses.A_BOLD)
+                    a = attr(C_BOMB_SOON if (x, y) in soon else C_BOMB, curses.A_BOLD)
                 elif ch == "*":
                     a = attr(C_FIRE, curses.A_BOLD)
                 elif ch == "x":
                     a = attr(C_DYING)
                 elif ch in "FBS":
-                    a = attr(C_ITEM, curses.A_BOLD)
+                    a = attr(C_THREAT if danger else C_ITEM, curses.A_BOLD)
                 elif "1" <= ch <= "8":
                     pid = ord(ch) - ord("1")
-                    a = attr(C_PLAYER + pid % 8, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
-                put(scr, 1 + y, x * self.cell_w, g.get(ch, ch), a)
+                    base = C_PLAYER_THREAT if danger else C_PLAYER
+                    a = attr(base + pid % 8, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
+                elif danger:
+                    a = attr(C_THREAT)
+                    text = "." if self.opts["ascii"] else "・"
+                put(scr, 1 + y, x * self.cell_w, text, a)
         # legend (bottom)
         row = 1 + self.start["h"]
-        legend = []
+        x = 0
         for p in st["players"]:
             n = self.names.get(p["id"], "?")[:8]
-            tag = "" if p["st"] == "alive" else "x"
-            legend.append((p["id"], "%d:%s%s" % (p["id"] + 1, n, tag)))
-        x = 0
-        for pid, text in legend:
-            put(scr, row, x, text, attr(C_PLAYER + pid % 8, curses.A_REVERSE if pid == self.me else 0))
+            tag = "" if p["st"] == "alive" else " x"
+            text = "%d:%s%s" % (p["id"] + 1, n, tag)
+            if x + len(text) >= cols:
+                row += 1
+                x = 0
+            a = attr(C_PLAYER + p["id"] % 8, curses.A_REVERSE if p["id"] == self.me else 0)
+            if p["st"] != "alive":
+                a = attr(C_DYING)
+            put(scr, row, x, text, a)
             x += len(text) + 2
         if me and me["st"] != "alive":
             put(scr, row + 1, 0, "YOU DIED - watching the rest. q: quit", attr(C_FIRE, curses.A_BOLD))
         elif self.msg:
             put(scr, row + 1, 0, self.msg, attr(C_FIRE))
+        else:
+            put(scr, row + 1, 0, "move: arrows/wasd  bomb: space  t: danger  q: quit"[:cols - 1])
 
     def draw_result(self):
         scr = self.scr
