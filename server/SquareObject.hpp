@@ -1,8 +1,8 @@
-#ifndef __SQUARE_OBJECT_HPP__
-
-#define __SQUARE_OBJECT_HPP__
+#ifndef SQUARE_OBJECT_HPP
+#define SQUARE_OBJECT_HPP
 
 #define MAP_SQ_SIZE_X   3
+#include <cstdint>
 #include <list>
 #include <vector>
 
@@ -24,6 +24,7 @@ class SquareObject{
 
     static void setMapSize(int map_size_x, int map_size_y);
     static void getMapSize(int *map_size_x, int *map_size_y);
+    static bool isInMap(int map_x, int map_y);
 
     // Execute every time
     static void runAllObjects();
@@ -45,11 +46,11 @@ class SquareObject{
 
     void print(const char *aa);
 
-    // Add attribute of next square_map 
+    // Add attribute of next square_map
     static uint8_t setSquareMapAttr(int map_x, int map_y, uint8_t map_attr);
 
     // Get attribute of previous square_map
-    static uint8_t getSquareMapAttr(int map_x, int map_y);     
+    static uint8_t getSquareMapAttr(int map_x, int map_y);
 
     static bool isElapsed(timespec *timepoint);
     static timespec current_time;
@@ -61,7 +62,7 @@ class SquareObject{
     // Previous map
     static std::vector<std::vector<uint8_t>> square_map_p;
 
-    // Object list 
+    // Object list
     static std::list<SquareObject*> object_list;
 };
 

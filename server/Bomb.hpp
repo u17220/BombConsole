@@ -1,5 +1,5 @@
-#ifndef __BOMB_HPP__
-#define __BOMB_HPP__
+#ifndef BOMB_HPP
+#define BOMB_HPP
 
 #include "SquareObject.hpp"
 #include "Player.hpp"
@@ -8,7 +8,7 @@
 
 #define BOMB_LIFETIME   2
 
-class Player;   // Forward declaratoin
+class Player;   // Forward declaration
 
 class Bomb : public SquareObject{
     public:
@@ -24,12 +24,15 @@ class Bomb : public SquareObject{
 
     virtual void explosion();
 
+    // Number of squares the fire reaches in direction (dx, dy)
+    int fireLength(int dx, int dy);
+
     Player *creator;
 
     // explosion time 
     timespec explosion_time;
 
-    // Range of fire
+    // Range of fire (including the center)
     int power;
     
 };

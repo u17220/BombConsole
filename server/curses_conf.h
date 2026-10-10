@@ -1,5 +1,5 @@
-#ifndef __COLOR_DEF_H__
-#define __COLOR_DEF_H__
+#ifndef CURSES_CONF_H
+#define CURSES_CONF_H
 #include <cstdint>
 
 //#define NO_CURSES

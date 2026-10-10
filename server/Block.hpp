@@ -1,5 +1,5 @@
-#ifndef __BLOCK_HPP__
-#define __BLOCK_HPP__
+#ifndef BLOCK_HPP
+#define BLOCK_HPP
 
 #include "SquareObject.hpp"
 

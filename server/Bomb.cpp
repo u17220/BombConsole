@@ -20,7 +20,10 @@ Bomb::Bomb(Player *creator_, int x_, int y_, int power_) :
 }
 
 
-Bomb::~Bomb(){}
+Bomb::~Bomb(){
+    if(creator != nullptr)
+        creator->removeBomb(this);
+}
 
 SquareObject::req_delete_t Bomb::run(){
     if(isElapsed(&explosion_time)){
@@ -48,49 +51,18 @@ void Bomb::drawAA(){
 }
 
 void Bomb::explosion(){
-    int x0, x1, y0, y1;
+    new Fire(x, y, x - fireLength(-1, 0), x + fireLength(1, 0), y - fireLength(0, -1), y + fireLength(0, 1));
+}
 
-    // Block and Bomb stops fire
-    uint8_t attr;
-    for(x0 = x-1; x0 > x-power; x0--){
-        attr = getSquareMapAttr(x0, y);
-        if(attr & BLOCK_ATTR){
-            x0++;
-            break;
-        }
-        else if(attr & BOMB_ATTR)
-            break;
+int Bomb::fireLength(int dx, int dy){
+    // Block and the edge of the map stop fire before them, Bomb stops fire on it.
+    for(int r = 1; r < power; r++){
+        int fx = x + dx*r, fy = y + dy*r;
+        uint8_t attr = getSquareMapAttr(fx, fy);
+        if(!isInMap(fx, fy) || (attr & BLOCK_ATTR))
+            return r - 1;
+        if(attr & BOMB_ATTR)
+            return r;
     }
-
-    for(x1 = x+1; x1 < x+power; x1++){
-        attr = getSquareMapAttr(x1, y);
-        if(attr & BLOCK_ATTR){
-            x1--;
-            break;
-        }
-        else if(attr & BOMB_ATTR)
-            break;
-    }
-    
-    for(y0 = y-1; y0 > y-power; y0--){
-        attr = getSquareMapAttr(x, y0);
-        if(attr & BLOCK_ATTR){
-            y0++;
-            break;
-        }
-        else if(attr & BOMB_ATTR)
-            break;
-    }
-    
-    for(y1 = y+1; y1 < y+power; y1++){
-        attr = getSquareMapAttr(x, y1);
-        if(attr & BLOCK_ATTR){
-            y1--;
-            break;
-        }
-        else if(attr & BOMB_ATTR)
-            break;
-    }
-    
-    new Fire(creator, x, y, x0, x1, y0, y1);
+    return power - 1;
 }

@@ -6,9 +6,8 @@
 #include <ncurses.h>
 #endif 
 
-Fire::Fire(Player *creator_, int x_, int y_, int left_fire_x_, int right_fire_x_, int down_fire_y_, int up_fire_y_) :
+Fire::Fire(int x_, int y_, int left_fire_x_, int right_fire_x_, int down_fire_y_, int up_fire_y_) :
     SquareObject(x_, y_),
-    creator(creator_),
     left_fire_x(left_fire_x_),
     right_fire_x(right_fire_x_),
     up_fire_y(up_fire_y_),
@@ -39,13 +38,9 @@ void Fire::drawAA(){
     for(r = left_fire_x; r <= right_fire_x; r++)
         if((getSquareMapAttr(r, y) & PLAYER_ATTR) == 0x00)
             mvprintw(y, r*MAP_SQ_SIZE_X, "炎");
-        else
-            creator->kills++;
     for(r = down_fire_y; r <= up_fire_y; r++)
         if((getSquareMapAttr(x, r) & PLAYER_ATTR) == 0x00)
             mvprintw(r, x*MAP_SQ_SIZE_X, "炎");
-        else
-            creator->kills++;
     attroff(COLOR_PAIR(FIRE_COLOR)); 
     #endif
 }
