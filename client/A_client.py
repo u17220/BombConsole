@@ -1,7 +1,6 @@
 import socket   # ソケット通信のため
 import curses   # 画面描画、キー入力のため
 import getpass  # ユーザー名取得のため
-import math     # 受信データサイズの計算のため
 import sys      # 引数を使うため
 
 # サーバーのIPアドレス
@@ -14,6 +13,17 @@ else:
 # ポート番号
 PORT = 10001 
 
+# ちょうど size バイト受信する（TCPは1回のrecvで全部届くとは限らない）
+# サーバとの接続が切れたら None を返す
+def recv_exact(sock, size):
+    data = b""
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            return None
+        data += chunk
+    return data
+
 
 #   スタート時の処理 -----------------------------------------
 user_name = getpass.getuser()
@@ -23,15 +33,15 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect((SERVER_IP, PORT))
 s.send(user_name_bytes)
 
-receive_data = s.recv(4)
+receive_data = recv_exact(s, 4)
+if receive_data is None:
+    sys.exit("サーバとの接続が切れました")
 
 x = receive_data[0]
 y = receive_data[1]
 
 MAP_SIZE_X = receive_data[2]
 MAP_SIZE_Y = receive_data[3]
-
-RCV_SIZE = 2**math.ceil(math.log2(MAP_SIZE_X*MAP_SIZE_Y+1))
 # --------------------------------------------------------
 
 
@@ -101,7 +111,9 @@ while True:
     
 
     #  マップデータの受信と表示処理    #
-    receive_data = s.recv(RCV_SIZE)
+    receive_data = recv_exact(s, 1)
+    if receive_data is None:
+        break
     
     # 受信データからキャラの状態（生死）のデータを取り出す
     state = receive_data[0]
@@ -111,7 +123,9 @@ while True:
         break
     
     # 受信データからマップデータを取り出す
-    map_data = receive_data[1:]
+    map_data = recv_exact(s, MAP_SIZE_X*MAP_SIZE_Y)
+    if map_data is None:
+        break
     
     # バッファクリア
     stdscr.erase()
@@ -120,7 +134,7 @@ while True:
     for j in range(MAP_SIZE_Y):
         for i in range(MAP_SIZE_X):
             # j行目のi文字目を取り出す
-            square = map_data[j*MAP_SIZE_Y + i]
+            square = map_data[j*MAP_SIZE_X + i]
             map_data2[j][i] = square
 
             # プレイヤー（生存）
@@ -182,9 +196,15 @@ curses.endwin()
 
 
 #  エンド時の処理 -----------------------------------------
-receive_data = s.recv(2048)
+# サーバが接続を閉じるまで受信する
+receive_data = b""
+while True:
+    chunk = s.recv(2048)
+    if not chunk:
+        break
+    receive_data += chunk
 
-ranking = receive_data.decode("utf-8")
+ranking = receive_data.decode("utf-8", errors="replace")
 print("RANKING")
 print(ranking)
 
