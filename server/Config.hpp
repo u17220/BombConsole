@@ -8,6 +8,7 @@
 // then by the command line (--key value). See Config::usage().
 struct Config{
     int port = 10001;
+    int discovery_port = 10001;     // UDP port for LAN discovery (0 = off)
     bool no_ui = false;
     std::string name = "";          // server name shown to clients (default: host name)
     std::string conf = "server.conf";

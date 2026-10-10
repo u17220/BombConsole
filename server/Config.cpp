@@ -39,6 +39,7 @@ static bool toBool(const std::string &v, bool &out){
 bool Config::set(const std::string &key, const std::string &value, std::string &err){
     bool ok = true;
     if(key == "port") ok = toInt(value, port);
+    else if(key == "discovery" || key == "discovery-port" || key == "discovery_port") ok = toInt(value, discovery_port);
     else if(key == "no-ui" || key == "no_ui") ok = toBool(value, no_ui);
     else if(key == "name") name = value;
     else if(key == "log") log = value;
@@ -174,6 +175,7 @@ std::string Config::usage(){
     return
     "usage: A_server [--key value ...]\n"
     "  --port N          TCP port (10001). 0 = any free port\n"
+    "  --discovery N     UDP port answering LAN discovery (10001, 0 = off)\n"
     "  --no-ui           no ncurses screen; log to stdout\n"
     "  --name S          server name shown to clients (host name)\n"
     "  --conf FILE       config file, key = value per line (server.conf)\n"

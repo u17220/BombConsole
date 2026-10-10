@@ -3,7 +3,7 @@ ifeq ($(origin CXX),default)
 CXX := g++
 endif
 CXXFLAGS := -O2 -std=c++11 -Wall -Wextra
-SRCS := server.cpp Config.cpp Game.cpp ServerClient.cpp Ui.cpp
+SRCS := server.cpp Config.cpp Discovery.cpp Game.cpp ServerClient.cpp Ui.cpp
 OBJS := $(SRCS:%.cpp=%.o)
 
 # ncurses detection: try ncursesw, then ncurses; otherwise build without a screen

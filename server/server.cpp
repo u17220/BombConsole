@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "Config.hpp"
+#include "Discovery.hpp"
 #include "Game.hpp"
 #include "Json.hpp"
 #include "ServerClient.hpp"
@@ -487,10 +488,28 @@ int main(int argc, char **argv){
     Server server((uint16_t)cfg.port);
     Ui ui(screen);
     ui.log("BombConsole server '" + cfg.name + "' listening on TCP port " + std::to_string(server.port()));
-    ui.log("clients: python3 client/A_client.py <this host>");
+    Discovery *discovery = nullptr;
+    if(cfg.discovery_port > 0){
+        discovery = new Discovery(cfg.discovery_port, server.port(), cfg.name);
+        if(discovery->ok())
+            ui.log("discovery: answering on UDP port " + std::to_string(cfg.discovery_port)
+                + " (clients on this LAN can start without an address)");
+        else
+            ui.log("discovery: cannot bind UDP port " + std::to_string(cfg.discovery_port) + " (is another server running?)");
+    }
+    std::vector<std::string> addrs = Discovery::localAddresses();
+    if(addrs.empty())
+        ui.log("clients: python3 A_client.py <this host>");
+    for(const std::string &a : addrs){
+        std::string hint = "clients: python3 A_client.py " + a;
+        if(server.port() != 10001)
+            hint += ":" + std::to_string(server.port());
+        ui.log(hint);
+    }
     {
         Session session(cfg, server, ui);
         session.run();
     }
+    delete discovery;
     return 0;
 }
