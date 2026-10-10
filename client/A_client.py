@@ -340,6 +340,8 @@ class Client:
         if st.get("left", -1) >= 0:
             hud += "  time %3.0f" % st["left"]
         put(scr, 0, 0, hud[:cols - 1], attr(C_HUD, curses.A_BOLD))
+        if st.get("sd"):
+            put(scr, 0, min(len(hud) + 2, cols - 14), "SUDDEN DEATH", attr(C_FIRE, curses.A_BOLD | curses.A_BLINK))
         # map
         g = self.glyph
         for y, line in enumerate(st["map"]):
