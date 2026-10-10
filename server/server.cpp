@@ -64,6 +64,9 @@ class Session{
     unsigned seed_base;
     std::vector<std::string> last_result;    // shown on the server screen
     std::vector<Client*> closed_now;         // clients closed while handling the current batch of events
+    FILE *logf = nullptr;                    // --log: one JSON object per line
+    void logLine(const std::string &json_obj);
+    void logGameEvents(Game &game);
 };
 
 static std::string sanitizeName(std::string s){
@@ -89,6 +92,32 @@ static std::string sanitizeName(std::string s){
 
 Session::Session(const Config &cfg_, Server &server_, Ui &ui_) : cfg(cfg_), server(server_), ui(ui_){
     seed_base = cfg.seed ? cfg.seed : (unsigned)time(nullptr) ^ (unsigned)getpid();
+    if(!cfg.log.empty()){
+        logf = fopen(cfg.log.c_str(), "a");
+        if(logf == nullptr)
+            ui.log("cannot open log file: " + cfg.log);
+        else
+            ui.log("event log: " + cfg.log);
+    }
+}
+
+void Session::logLine(const std::string &obj){
+    if(logf == nullptr)
+        return;
+    fprintf(logf, "%s\n", obj.c_str());
+    fflush(logf);
+}
+
+void Session::logGameEvents(Game &game){
+    if(logf == nullptr)
+        return;
+    for(const GameEvent &e : game.takeNewEvents()){
+        std::string s = "{\"ev\":" + json::str(e.type) + ",\"session\":" + json::num(session) + ",\"round\":" + json::num(round)
+            + ",\"tick\":" + json::num(e.tick) + ",\"actor\":" + json::num(e.actor) + ",\"target\":" + json::num(e.target);
+        if(!e.extra.empty())
+            s += ",\"extra\":" + json::str(e.extra);
+        logLine(s + "}");
+    }
 }
 
 Member *Session::findMember(Client *c){
@@ -336,6 +365,18 @@ void Session::playRound(){
     server.broadcast(start + "\n");
     ui.log("round " + std::to_string(round) + " start: " + std::to_string(seats.size()) + " players, "
         + std::to_string(game.width()) + "x" + std::to_string(game.height()) + ", seed " + std::to_string(seed));
+    {
+        std::string s = "{\"ev\":\"start\",\"session\":" + json::num(session) + ",\"round\":" + json::num(round)
+            + ",\"time\":" + json::num((long)time(nullptr)) + ",\"seed\":" + json::num(seed)
+            + ",\"w\":" + json::num(game.width()) + ",\"h\":" + json::num(game.height()) + ",\"players\":[";
+        for(size_t i = 0; i < game.players().size(); i++){
+            const GamePlayer &p = game.players()[i];
+            if(i) s += ",";
+            s += "{\"id\":" + json::num(p.id) + ",\"name\":" + json::str(p.name) + ",\"seat\":" + json::num((int)i)
+                + ",\"x\":" + json::num(p.x) + ",\"y\":" + json::num(p.y) + "}";
+        }
+        logLine(s + "]}");
+    }
 
     std::vector<NetEvent> events;
     auto next = clock::now();
@@ -388,6 +429,7 @@ void Session::playRound(){
             g_stop = 1;
         game.tick();
         server.broadcast(game.stateJson() + "\n");
+        logGameEvents(game);
         if(ui.hasScreen()){
             std::vector<std::string> lines;
             char buf[160];
@@ -419,6 +461,13 @@ void Session::finishRound(Game &game){
     }
     std::string result = game.resultJson(round, cfg.rounds, round_score);
     server.broadcast(result + "\n");
+    logGameEvents(game);
+    if(logf != nullptr){
+        // the result message itself, tagged for the log
+        std::string r = result;
+        r.replace(0, std::string("{\"t\":\"result\"").size(), "{\"ev\":\"result\",\"session\":" + json::num(session));
+        logLine(r);
+    }
 
     last_result.clear();
     last_result.push_back("result of round " + std::to_string(round) + ":");

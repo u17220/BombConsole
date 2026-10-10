@@ -179,7 +179,7 @@ std::string Config::usage(){
     "  --no-ui           no ncurses screen; log to stdout\n"
     "  --name S          server name shown to clients (host name)\n"
     "  --conf FILE       config file, key = value per line (server.conf)\n"
-    "  --log FILE        write game events as JSON lines\n"
+    "  --log FILE        append game events as JSON lines (see tools/stats.py)\n"
     "  --seed N          random seed (0 = random)\n"
     "  --rounds N        rounds per session (1)\n"
     "  --countdown N     seconds from all-ready to start (5)\n"

@@ -483,9 +483,42 @@ std::vector<std::string> Game::mapRows() const{
     return rows;
 }
 
+bool Game::fireBurning() const{
+    for(int y = 0; y < h; y++)
+        for(int x = 0; x < w; x++)
+            if(grid[y][x].fire_until > ticks)
+                return true;
+    return false;
+}
+
 std::vector<std::string> Game::threatRows() const{
-    // introduced in stage 3
-    return std::vector<std::string>();
+    // squares the fire of the current bombs would reach (same rule as explode)
+    std::vector<std::string> rows(h, std::string(w, '.'));
+    if(bs.empty())
+        return rows;
+    const int dx[4] = {1, -1, 0, 0};
+    const int dy[4] = {0, 0, 1, -1};
+    for(const Bomb &b : bs){
+        rows[b.y][b.x] = '!';
+        for(int d = 0; d < 4; d++){
+            for(int r = 1; r <= b.power; r++){
+                int fx = b.x + dx[d] * r, fy = b.y + dy[d] * r;
+                if(fx < 0 || fy < 0 || fx >= w || fy >= h)
+                    break;
+                const Cell &c = grid[fy][fx];
+                if(c.kind == '#')
+                    break;
+                rows[fy][fx] = '!';
+                if(c.kind == '+' || c.item || bombAt(fx, fy))
+                    break;
+            }
+        }
+    }
+    for(int y = 0; y < h; y++)
+        for(int x = 0; x < w; x++)
+            if(grid[y][x].fire_until > ticks)
+                rows[y][x] = '!';
+    return rows;
 }
 
 static std::string rowsJson(const std::vector<std::string> &rows){
@@ -536,9 +569,8 @@ std::string Game::stateJson() const{
             + ",\"fuse\":" + json::num(b.fuse * cfg.tick_ms / 1000.0) + ",\"owner\":" + json::num(b.owner) + "}";
     }
     s += "]";
-    std::vector<std::string> threat = threatRows();
-    if(!threat.empty())
-        s += ",\"threat\":" + rowsJson(threat);
+    if(!bs.empty() || fireBurning())
+        s += ",\"threat\":" + rowsJson(threatRows());
     return s + "}";
 }
 

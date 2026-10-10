@@ -82,6 +82,7 @@ class Game{
     // Map as one string per row (one char per square), as sent to clients.
     std::vector<std::string> mapRows() const;
     std::vector<std::string> threatRows() const;
+    bool fireBurning() const;
 
     std::string startJson(int round, int rounds) const;
     std::string stateJson() const;
