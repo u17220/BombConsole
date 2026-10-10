@@ -4,6 +4,7 @@
 
 - 図の閲覧用ページ(Artifact): https://claude.ai/artifact/LvutxkkyAakJgMQrSnDybW (非公開。所有者のみ閲覧可)
 - 図のSVG本体: [`img/`](img/)
+- ゲームとして面白くするための改善方針(現状の精査と検討内容): [`improvement-plan.md`](improvement-plan.md)
 
 ## 1. 動かし方
 
