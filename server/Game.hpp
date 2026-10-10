@@ -97,6 +97,7 @@ class Game{
     private:
     void buildMap(int n);
     void placePlayer(GamePlayer &p, int seat, int n);
+    void placeSoftBlocks();
     GamePlayer *find(int id);
     bool blocked(int x, int y) const;   // cannot walk into
     bool bombAt(int x, int y) const;

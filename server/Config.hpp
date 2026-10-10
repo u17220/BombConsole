@@ -33,10 +33,11 @@ struct Config{
     double dying = 1.0;             // seconds of the death animation
     double time_limit = 0;          // seconds, 0 = none
     double sudden_death = 0;        // seconds before the end when the walls start closing
-    int soft_pct = 0;               // % of free squares filled with soft blocks
+    int soft_pct = 60;              // % of free squares filled with soft blocks (3+ players)
+    int soft_pct_2p = 50;           // same for 2 players (less to dig)
     int item_pct = 35;              // % of soft blocks that drop an item
     int item_fire = 45, item_bomb = 35, item_speed = 20;    // ratio of item kinds
-    bool legacy_map = true;         // 4*ceil(sqrt(n))-1 square map (v1 rule)
+    bool legacy_map = false;        // 4*ceil(sqrt(n))-1 square map (v1 rule) instead of the presets
 
     // Returns false on error (message in err). help=true when --help was given.
     bool parse(int argc, char **argv, std::string &err, bool &help);

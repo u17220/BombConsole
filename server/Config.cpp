@@ -61,6 +61,7 @@ bool Config::set(const std::string &key, const std::string &value, std::string &
     else if(key == "time") ok = toDouble(value, time_limit);
     else if(key == "sudden-death" || key == "sudden_death") ok = toDouble(value, sudden_death);
     else if(key == "soft") ok = toInt(value, soft_pct);
+    else if(key == "soft-2p" || key == "soft_2p") ok = toInt(value, soft_pct_2p);
     else if(key == "item") ok = toInt(value, item_pct);
     else if(key == "item-fire" || key == "item_fire") ok = toInt(value, item_fire);
     else if(key == "item-bomb" || key == "item_bomb") ok = toInt(value, item_bomb);
@@ -191,8 +192,8 @@ std::string Config::usage(){
     "  --dying S         death animation in seconds (1.0)\n"
     "  --time S          round time limit in seconds (0 = none)\n"
     "  --sudden-death S  seconds before the end when walls close in (0 = off)\n"
-    "  --soft PCT        soft block density in percent (0)\n"
+    "  --soft PCT        soft block density in percent (60), --soft-2p PCT for 2 players (50)\n"
     "  --item PCT        chance that a soft block drops an item (35)\n"
     "  --item-fire N --item-bomb N --item-speed N   item ratio (45:35:20)\n"
-    "  --legacy-map      square map 4*ceil(sqrt(n))-1 (on); --legacy-map 0 for presets\n";
+    "  --legacy-map      v1 square map 4*ceil(sqrt(n))-1 instead of the presets by player count\n";
 }

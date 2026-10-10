@@ -27,9 +27,17 @@ const char *Game::causeName(Cause c){
 // ---- setup ----
 
 void Game::buildMap(int n){
-    // v1 rule: square map of 4*ceil(sqrt(n))-1, outer wall and pillars on even squares
-    int size = 4 * (int)ceil(sqrt((double)std::max(n, 2))) - 1;
-    w = h = size;
+    if(cfg.legacy_map){
+        // v1 rule: square map of 4*ceil(sqrt(n))-1
+        w = h = 4 * (int)ceil(sqrt((double)std::max(n, 2))) - 1;
+    }
+    else{
+        // presets by player count (improvement-plan 3.1): fit in 80x24 with 3 columns per square
+        if(n <= 2){ w = 13; h = 11; }
+        else if(n <= 4){ w = 15; h = 13; }
+        else if(n <= 6){ w = 19; h = 15; }
+        else{ w = 21; h = 17; }
+    }
     grid.assign(h, std::vector<Cell>(w));
     for(int y = 0; y < h; y++)
         for(int x = 0; x < w; x++)
@@ -37,20 +45,58 @@ void Game::buildMap(int n){
                 grid[y][x].kind = '#';
 }
 
-void Game::placePlayer(GamePlayer &p, int seat, int){
-    // v1 rule: from (1,1), x += 4, wrap to the next row of y += 4
+void Game::placePlayer(GamePlayer &p, int seat, int n){
     int x = 1, y = 1;
-    for(int i = 0; i < seat; i++){
-        x += 4;
-        if(x >= w){
-            x = 1;
-            y += 4;
+    if(cfg.legacy_map){
+        // v1 rule: from (1,1), x += 4, wrap to the next row of y += 4
+        for(int i = 0; i < seat; i++){
+            x += 4;
+            if(x >= w){
+                x = 1;
+                y += 4;
+            }
         }
+        if(y >= h - 1)
+            y = h - 2;
     }
-    if(y >= h - 1)
-        y = h - 2;
+    else{
+        // corners first (opposite corners for 2 players), then the middle of each edge
+        int mx = w / 2, my = h / 2;
+        if(mx % 2 == 0) mx--;       // not on a pillar
+        if(my % 2 == 0) my--;
+        const int corner[4][2] = {{1, 1}, {w - 2, h - 2}, {w - 2, 1}, {1, h - 2}};
+        const int edge[4][2] = {{mx, 1}, {mx, h - 2}, {1, my}, {w - 2, my}};
+        if(seat < 4){ x = corner[seat][0]; y = corner[seat][1]; }
+        else{ x = edge[(seat - 4) % 4][0]; y = edge[(seat - 4) % 4][1]; }
+        (void)n;
+    }
     p.x = p.start_x = x;
     p.y = p.start_y = y;
+}
+
+void Game::placeSoftBlocks(){
+    int pct = ps.size() <= 2 ? cfg.soft_pct_2p : cfg.soft_pct;
+    if(pct <= 0)
+        return;
+    // protect the start squares and their neighbours so that everybody can move and hide
+    std::vector<std::vector<bool>> protect(h, std::vector<bool>(w, false));
+    for(const GamePlayer &p : ps){
+        const int dx[5] = {0, 1, -1, 0, 0}, dy[5] = {0, 0, 0, 1, -1};
+        for(int d = 0; d < 5; d++){
+            int x = p.x + dx[d], y = p.y + dy[d];
+            if(x >= 0 && y >= 0 && x < w && y < h)
+                protect[y][x] = true;
+        }
+    }
+    std::vector<std::pair<int, int>> free;
+    for(int y = 0; y < h; y++)
+        for(int x = 0; x < w; x++)
+            if(grid[y][x].kind == ' ' && !protect[y][x])
+                free.push_back(std::make_pair(x, y));
+    std::shuffle(free.begin(), free.end(), rng);
+    size_t count = free.size() * (size_t)pct / 100;
+    for(size_t i = 0; i < count; i++)
+        grid[free[i].second][free[i].first].kind = '+';
 }
 
 void Game::start(const std::vector<std::pair<int, std::string>> &players){
@@ -75,6 +121,7 @@ void Game::start(const std::vector<std::pair<int, std::string>> &players){
         placePlayer(p, seat++, n);
         ps.push_back(p);
     }
+    placeSoftBlocks();
 }
 
 GamePlayer *Game::find(int id){
