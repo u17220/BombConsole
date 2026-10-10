@@ -3,7 +3,9 @@
 
 usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii]
 
-  host      server address (default: 127.0.0.1, or $BOMBCONSOLE_SERVER=host:port)
+  host      server address. Without it the client looks for servers on the LAN
+            (UDP broadcast) and connects to the one it finds; $BOMBCONSOLE_SERVER=host:port
+            also works where broadcasts don't (VPN, guest Wi-Fi)
   --name    player name (default: $BOMBCONSOLE_NAME, then the login user name)
   --ascii   draw with ASCII characters only (2 columns per square)
 
@@ -62,6 +64,67 @@ def parse_args(argv):
     if os.environ.get("BOMBCONSOLE_ASCII"):
         opts["ascii"] = True
     return opts
+
+
+# ---------------------------------------------------------------- discovery
+
+
+def discover(port=DEFAULT_PORT, wait=1.0):
+    """Broadcast BOMBCONSOLE? and collect (host, tcp_port, name) replies for `wait` seconds."""
+    found = []
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s.settimeout(0.2)
+        for _ in range(2):
+            try:
+                s.sendto(b"BOMBCONSOLE?", ("255.255.255.255", port))
+                s.sendto(b"BOMBCONSOLE?", ("127.0.0.1", port))
+            except OSError:
+                pass
+            end = time.time() + wait / 2
+            while time.time() < end:
+                try:
+                    data, addr = s.recvfrom(256)
+                except socket.timeout:
+                    continue
+                except OSError:
+                    break
+                parts = data.decode("utf-8", "replace").split(" ", 2)
+                if len(parts) >= 2 and parts[0] == "BOMBCONSOLE":
+                    entry = (addr[0], int(parts[1]), parts[2] if len(parts) > 2 else "")
+                    # the same server answers on 127.0.0.1 and on its LAN address: keep one
+                    dup = [e for e in found if e[1:] == entry[1:]]
+                    if not dup:
+                        found.append(entry)
+                    elif dup[0][0].startswith("127.") and not entry[0].startswith("127."):
+                        found[found.index(dup[0])] = entry
+        s.close()
+    except OSError:
+        pass
+    return found
+
+
+def choose_server(port):
+    print("looking for BombConsole servers on the LAN...")
+    found = discover(port)
+    if len(found) == 1:
+        host, tcp_port, name = found[0]
+        print("found %s at %s:%d" % (name, host, tcp_port))
+        return host, tcp_port
+    if len(found) > 1:
+        for i, (host, tcp_port, name) in enumerate(found):
+            print("  %d) %s  %s:%d" % (i + 1, name, host, tcp_port))
+        while True:
+            ans = input("which server? [1] ").strip() or "1"
+            if ans.isdigit() and 1 <= int(ans) <= len(found):
+                host, tcp_port, _ = found[int(ans) - 1]
+                return host, tcp_port
+    ans = input("no server found. address (host[:port], empty = 127.0.0.1): ").strip() or "127.0.0.1"
+    if ":" in ans:
+        h, p = ans.rsplit(":", 1)
+        return h, int(p)
+    return ans, port
 
 
 # ---------------------------------------------------------------- network
@@ -460,7 +523,12 @@ def main():
         enc = (locale.getpreferredencoding(False) or "").lower()
         if "utf" not in enc:
             opts["ascii"] = True
-    host = opts["host"] or "127.0.0.1"
+    host = opts["host"]
+    if not host:
+        try:
+            host, opts["port"] = choose_server(opts["port"])
+        except (EOFError, KeyboardInterrupt):
+            sys.exit("")
     try:
         conn = Connection(host, opts["port"])
     except OSError as e:
