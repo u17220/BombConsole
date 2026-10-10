@@ -43,6 +43,7 @@ fuse = 2.5
 | オプション | 既定 | 内容 |
 |---|---|---|
 | `--port N` | 10001 | TCP ポート。0 で空きポート |
+| `--discovery N` | 10001 | 自動発見に応答する UDP ポート。0 で無効 |
 | `--no-ui` | | ncurses 画面を使わず標準出力にログを出す |
 | `--name S` | ホスト名 | クライアントに見せるサーバ名 |
 | `--conf FILE` | server.conf | 設定ファイル |
@@ -65,14 +66,22 @@ fuse = 2.5
 ### クライアント
 
 ```bash
-python3 client/A_client.py <サーバのIPアドレス>      # 例: 192.168.1.10
-python3 client/A_client.py                          # 省略時は 127.0.0.1
+python3 client/A_client.py                          # 引数なし: LAN 内のサーバを探して接続
+python3 client/A_client.py 192.168.1.10             # アドレスを指定
+python3 client/A_client.py 192.168.1.10:10002       # ポートも指定
 ```
 
-- `host:port` の形式、環境変数 `BOMBCONSOLE_SERVER=host:port` でも指定できる。
+- 引数なしのときは UDP ブロードキャスト(ポート 10001)で `BOMBCONSOLE?` を送り、1 秒待つ。1 台見つかればそのまま接続、複数なら番号で選ぶ、見つからなければアドレスの入力を促す。ブロードキャストが届かないネットワーク(VPN、ゲスト Wi-Fi、クライアント隔離のある AP)では、引数か環境変数 `BOMBCONSOLE_SERVER=host:port` で指定する。
+- サーバは起動時に自分の LAN アドレスを列挙し、`clients: python3 A_client.py 192.168.x.y` の形で表示する。
 - 名前は `--name 名前` > 環境変数 `BOMBCONSOLE_NAME` > ログインユーザー名。同名はサーバ側で `(2)` を付けて区別する。
 - `--ascii` で ASCII 文字だけで描く(1 マス 2 桁)。既定は全角文字(1 マス 3 桁)。
 - 操作: 移動 = 矢印 / `WASD` / `hjkl`、ボム = `Space` / `z`、準備完了 = `r`、退出 = `q`(ラウンド中は 1 秒以内に 2 回)。
+- クライアント側に入れるものは Python 3 だけ。配るときは `A_client.py` 1 ファイルを渡せばよい:
+
+```bash
+curl -O https://raw.githubusercontent.com/<owner>/BombConsole/master/client/A_client.py
+python3 A_client.py
+```
 
 ### ボット
 
@@ -109,6 +118,7 @@ BombConsole/
 │   ├── Game.{hpp,cpp}       1 ラウンドのルール(マップ、プレイヤー、ボム、炎、順位)
 │   ├── ServerClient.{hpp,cpp}  TCP サーバ。受信スレッドが行とイベントをキューに積む
 │   ├── Config.{hpp,cpp}     引数と server.conf
+│   ├── Discovery.{hpp,cpp}  UDP の自動発見応答と LAN アドレスの列挙
 │   ├── Ui.{hpp,cpp}         サーバ画面(ncurses)。NO_CURSES / --no-ui では標準出力
 │   ├── Json.hpp             JSON の書き出し(パーサは持たない)
 │   ├── ncurses_probe.cpp    makefile の ncurses 検出用
@@ -127,6 +137,7 @@ BombConsole/
 |---|---|
 | main | 50 ms ごとに「ネットワークイベントの処理 → `Game::tick` → 状態の全員配信 → 画面描画」を `sleep_until` で刻む。ゲームの状態を触るのはこのスレッドだけ |
 | accept | `accept` して `Client` を作り、CONNECT イベントを積む |
+| discovery | UDP で `BOMBCONSOLE?` を受けたら `BOMBCONSOLE <TCPポート> <サーバ名>` を返す |
 | Client × N | `read` して改行で区切り、LINE イベントを積む。切断で DISCONNECT を積んで終了 |
 
 ロビー中も同じ周期で回り、`READY` の集計とカウントダウンをする。サーバ画面の `getch` は非ブロッキングで、周期には関与しない。
