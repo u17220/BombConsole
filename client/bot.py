@@ -91,7 +91,7 @@ class Bot:
         if not (0 <= y < len(m) and 0 <= x < len(m[0])):
             return False
         ch = m[y][x]
-        return ch not in "#+o"
+        return ch not in "#+o*"
 
     def bfs(self, st, start, goal_fn, avoid):
         """First step (direction) of the shortest path to a square where goal_fn is true."""
