@@ -33,7 +33,9 @@ def main():
         else:
             sys.exit("unknown option: " + a)
 
-    srv_args = [server, "--no-ui", "--port", "0", "--countdown", "0", "--seed", "1", "--conf", os.devnull]
+    # --time keeps the check bounded even when the bots never meet; options after -- override it
+    srv_args = [server, "--no-ui", "--port", "0", "--countdown", "0", "--seed", "1", "--conf", os.devnull,
+                "--time", "60"]
     srv_args += extra
     srv = subprocess.Popen(srv_args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                            stdin=subprocess.DEVNULL)
