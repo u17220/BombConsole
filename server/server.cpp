@@ -58,6 +58,7 @@ class Session{
     Ui &ui;
     std::vector<Member> members;
     int round = 1;
+    int session = 0;                // incremented when all rounds are played
     std::map<int, int> score;       // player id -> session score
     std::map<int, int> kills_total;
     unsigned seed_base;
@@ -328,7 +329,7 @@ void Session::playRound(){
         else
             m.spectator = true;
     }
-    unsigned seed = seed_base + (unsigned)round * 7919u;
+    unsigned seed = seed_base + (unsigned)(session * cfg.rounds + round) * 7919u;
     Game game(cfg, seed);
     game.start(seats);
     std::string start = game.startJson(round, cfg.rounds);
@@ -452,6 +453,7 @@ void Session::finishRound(Game &game){
         s += "]}";
         server.broadcast(s + "\n");
         round = 1;
+        session++;
         score.clear();
         kills_total.clear();
     }
