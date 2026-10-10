@@ -155,6 +155,13 @@ class Bot:
                 d2 = self.danger(fake)
                 if self.bfs(fake, pos, lambda c: c not in d2, set()):
                     return ("-", 1)
+        if st.get("sd"):
+            # walls are closing from the outside: drift towards the centre
+            cx, cy = len(m[0]) // 2, len(m) // 2
+            dist = abs(pos[0] - cx) + abs(pos[1] - cy)
+            d = self.bfs(st, pos, lambda c: abs(c[0] - cx) + abs(c[1] - cy) < dist, danger)
+            if d:
+                return (d, 0)
         d = self.bfs(st, pos, next_to_target, danger)
         if d and self.rng.random() < 0.8:
             return (d, 0)
