@@ -248,8 +248,18 @@ void Game::explode(size_t bi, std::vector<size_t> &chain){
     }
 }
 
-void Game::dropItem(int, int){
-    // items are introduced in stage 1
+void Game::dropItem(int x, int y){
+    if(cfg.item_pct <= 0)
+        return;
+    std::uniform_int_distribution<int> pct(0, 99);
+    if(pct(rng) >= cfg.item_pct)
+        return;
+    int total = cfg.item_fire + cfg.item_bomb + cfg.item_speed;
+    if(total <= 0)
+        return;
+    std::uniform_int_distribution<int> kind(0, total - 1);
+    int r = kind(rng);
+    grid[y][x].item = r < cfg.item_fire ? 'F' : r < cfg.item_fire + cfg.item_bomb ? 'B' : 'S';
 }
 
 void Game::advanceSuddenDeath(){
