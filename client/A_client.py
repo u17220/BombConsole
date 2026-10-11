@@ -40,6 +40,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 
 PROTO = 1
 DEFAULT_PORT = 10001
@@ -372,11 +373,16 @@ class Connection:
 # the other characters are Wide everywhere. Players are 自 (me) / 敵 (others), told apart by colour.
 GLYPH_WIDE = {
     "#": "■", "+": "岩", "o": "爆", "*": "炎", "x": "死",
-    "F": "火", "B": "弾", "S": "速", " ": "　",
+    "F": "力", "B": "玉", "S": "速", " ": "　",
 }
+ITEM_NAMES_WIDE = (("F", "火力+"), ("B", "ボム+"), ("S", "速度+"))
+ITEM_NAMES_ASCII = (("F", "fire+"), ("B", "bomb+"), ("S", "speed+"))
+FUSE_FRAMES = "*+"      # the fuse of a bomb flickers between these (one frame per 4 ticks)
 GLYPH_ASCII = {c: c for c in "#+o*xFBS12345678 "}
 
 C_WALL, C_SOFT, C_BOMB, C_FIRE, C_ITEM, C_DYING, C_THREAT, C_HUD, C_BOMB_SOON = range(1, 10)
+C_FUSE, C_FUSE_SOON, C_ITEM_F, C_ITEM_B, C_ITEM_S = range(30, 35)
+C_ITEMS = {"F": C_ITEM_F, "B": C_ITEM_B, "S": C_ITEM_S}
 C_PLAYER = 10   # + player id (0..7)
 C_PLAYER_THREAT = 20    # + player id, on a threatened square
 
@@ -399,6 +405,13 @@ def init_colors():
     curses.init_pair(C_THREAT, curses.COLOR_YELLOW, curses.COLOR_RED)
     curses.init_pair(C_HUD, curses.COLOR_CYAN, bg)
     curses.init_pair(C_BOMB_SOON, curses.COLOR_RED, bg)
+    curses.init_pair(C_FUSE, curses.COLOR_YELLOW, bg)
+    curses.init_pair(C_FUSE_SOON, curses.COLOR_RED, bg)
+    # items: dark text on a bright background so that they look like pick-ups, not hazards
+    # (no red: that is fire)
+    curses.init_pair(C_ITEM_F, curses.COLOR_BLACK, curses.COLOR_YELLOW)
+    curses.init_pair(C_ITEM_B, curses.COLOR_BLACK, curses.COLOR_CYAN)
+    curses.init_pair(C_ITEM_S, curses.COLOR_BLACK, curses.COLOR_GREEN)
     pc = [curses.COLOR_CYAN, curses.COLOR_GREEN, curses.COLOR_YELLOW, curses.COLOR_MAGENTA,
           curses.COLOR_RED, curses.COLOR_BLUE, curses.COLOR_WHITE, curses.COLOR_CYAN]
     for i in range(8):
@@ -410,6 +423,11 @@ def attr(pair, extra=0):
     if curses.has_colors():
         return curses.color_pair(pair) | extra
     return extra
+
+
+def dispw(text):
+    """Display width in columns (full-width characters count 2)."""
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
 
 
 def put(scr, y, x, text, a=0):
@@ -605,7 +623,7 @@ class Client:
     def need_size(self):
         if not self.start:
             return (0, 0)
-        return (self.start["w"] * self.cell_w, self.start["h"] + 3)
+        return (self.start["w"] * self.cell_w, self.start["h"] + 4)
 
     def draw_game(self):
         scr = self.scr
@@ -642,6 +660,8 @@ class Client:
         for b in st.get("bombs", []):
             if b["fuse"] < 1.0:
                 soon.add((b["x"], b["y"]))
+        fuse_ch = FUSE_FRAMES[(st.get("tick", 0) // 4) % len(FUSE_FRAMES)]
+        fuses = []      # (y, x, text, attr) drawn after the square
         for y, line in enumerate(st["map"]):
             trow = threat[y] if threat and y < len(threat) else None
             for x, ch in enumerate(line):
@@ -655,13 +675,21 @@ class Client:
                 elif ch == "+":
                     a = attr(C_SOFT)
                 elif ch == "o":
-                    a = attr(C_BOMB_SOON if (x, y) in soon else C_BOMB, curses.A_BOLD)
+                    a = attr(C_BOMB, curses.A_BOLD)
+                    if not self.opts["ascii"]:
+                        # v1 look: 爆 (blue) + fuse * (yellow); the fuse turns red bold under 1 s
+                        if (x, y) in soon:
+                            fuses.append((1 + y, x * self.cell_w + 2, fuse_ch, attr(C_FUSE_SOON, curses.A_BOLD)))
+                        else:
+                            fuses.append((1 + y, x * self.cell_w + 2, fuse_ch, attr(C_FUSE)))
+                    elif (x, y) in soon:
+                        a = attr(C_BOMB_SOON, curses.A_BOLD)
                 elif ch == "*":
                     a = attr(C_FIRE, curses.A_BOLD)
                 elif ch == "x":
                     a = attr(C_DYING)
                 elif ch in "FBS":
-                    a = attr(C_THREAT if danger else C_ITEM, curses.A_BOLD)
+                    a = attr(C_ITEMS[ch])
                 elif "1" <= ch <= "8":
                     pid = ord(ch) - ord("1")
                     base = C_PLAYER_THREAT if danger else C_PLAYER
@@ -674,6 +702,8 @@ class Client:
                     a = attr(C_THREAT)
                     text = "." if self.opts["ascii"] else "・"
                 put(scr, 1 + y, x * self.cell_w, text, a)
+        for fy, fx, ftext, fa in fuses:
+            put(scr, fy, fx, ftext, fa)
         # legend (bottom)
         row = 1 + self.start["h"]
         x = 0
@@ -692,6 +722,15 @@ class Client:
                 a = attr(C_DYING)
             put(scr, row, x, text, a)
             x += len(text) + 2
+        # items, in their real colours
+        row += 1
+        x = 0
+        for key, label in (ITEM_NAMES_ASCII if self.opts["ascii"] else ITEM_NAMES_WIDE):
+            glyph = self.glyph[key]
+            put(scr, row, x, glyph, attr(C_ITEMS[key]))
+            x += dispw(glyph)
+            put(scr, row, x, "=" + label, 0)
+            x += dispw("=" + label) + 2
         if me and me["st"] != "alive":
             put(scr, row + 1, 0, "YOU DIED - watching the rest. q: quit", attr(C_FIRE, curses.A_BOLD))
         elif self.msg:
