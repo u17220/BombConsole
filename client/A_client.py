@@ -718,7 +718,11 @@ class Client:
                 put(scr, row, 0, "   %-16s %d win(s)  %d kill(s)" % (p["name"][:16], p["score"], p["kills"]))
                 row += 1
         row += 1
-        put(scr, row, 0, "r: ready for the next round   any key: lobby   q: quit")
+        put(scr, row, 0, "r: play again   q: quit   (any other key: back to the lobby)", attr(C_HUD, curses.A_BOLD))
+        if self.lobby:
+            waiting = [p["name"][:8] for p in self.lobby["players"] if p["ready"]]
+            if waiting:
+                put(scr, row + 1, 0, "ready for the next round: " + ", ".join(waiting))
 
     # ---- main loop ----
 
