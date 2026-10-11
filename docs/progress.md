@@ -197,3 +197,19 @@
 
 - `力` / `玉` の最終決定は実機で見比べて行う。候補を変えるときは `A_client.py` の `GLYPH_WIDE` と `ITEM_NAMES_WIDE` の 2 か所。
 - 端末が色を 8 色しか持たない場合、黄背景とシアン背景の明るさが環境で変わる。
+
+## 追加: ドキュメント整理(2026-10-11)
+
+### やったこと
+
+- リポジトリ直下に `README.md` を新設。内容は「どういうプロジェクトか」(3 段落)と「起動方法」だけ: 必要なもの(git、g++ と make、Python 3、Windows は WSL)、3 つの入口(1 人で試す / 友達とやる(ホスト) / 参加する)のコマンド、操作キー、ルールの要点 5 行、docs へのリンク。`curl -O` の URL は `https://raw.githubusercontent.com/u17220/BombConsole/master/client/A_client.py`。`<owner>` と `<このリポジトリ>` の仮置きは置換した。
+- `docs/README.md` は「仕組み」のドキュメントにした。起動方法の重複を削り、先頭に docs 内の案内(improvement-plan.md = 改善方針と検討、progress.md = 進捗と確認結果、img/ = v1 時点の図)とトップ README へのリンクを置いた。残したのは、サーバのオプションと設定ファイル(全パラメータ)、クライアントのオプションと画面、ボット、イベントログと集計、自動テスト、構成とスレッドと tick、プロトコル v2、ルールと順位、クライアント内部、既知の制限(■ の幅、Windows、ブロードキャストの届く範囲、`--host` の前提、再接続なし、macOS の ncurses)。
+
+### 確認方法と結果
+
+- 別ディレクトリに `git clone -b feat/game-foundation` した状態で、トップ README の手順どおり `make` → `python3 client/A_client.py --host --bots 2` を pty で実行。ビルド成功、ロビーに参加コマンドの表示、自動開始、1 ラウンド完走、結果画面、`q` で終了、サーバとボットは残らない、まで確認した(サーバログに `hiira` と `bot1` / `bot2` の結果が記録されている)。
+- 確認時はポート 10001 が別のセッションで実行中のゲームに使われていたため、`-- --port 10077 --discovery 0` を付けて実行した。README の手順そのものは既定ポートのまま。
+
+### 未解決の点
+
+- トップ README の `git clone` URL と `curl -O` の URL は `u17220/BombConsole` の `master` を指す。ブランチのマージと push 後に有効になる。
