@@ -17,7 +17,9 @@ import json
 import os
 import random
 import socket
+import stat
 import sys
+import threading
 from collections import deque
 
 PROTO = 1
@@ -225,5 +227,25 @@ class Bot:
         s.close()
 
 
+def exit_with_parent():
+    """When started by A_client.py --host, stdin is a pipe held by the parent: EOF on it
+    means the parent died (even by SIGKILL), so leave instead of lingering as an orphan."""
+    try:
+        if not stat.S_ISFIFO(os.fstat(0).st_mode):
+            return      # a terminal or /dev/null: nothing to watch
+    except OSError:
+        return
+
+    def watch():
+        try:
+            while os.read(0, 256):
+                pass
+        except OSError:
+            pass
+        os._exit(0)
+    threading.Thread(target=watch, daemon=True).start()
+
+
 if __name__ == "__main__":
+    exit_with_parent()
     Bot(parse_args(sys.argv)).run()
