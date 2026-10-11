@@ -1,27 +1,30 @@
 #include "ServerClient.hpp"
 
-#include <thread>
-#include <sys/socket.h>
 #include <arpa/inet.h>
-#include <poll.h>
-#include <unistd.h>
 #include <errno.h>
-#include <stdlib.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-Client::Client(int ss_, std::atomic<ReceiveHandler> *onReceive_):
-    ss(ss_),
-    onReceive(onReceive_),
-    t(nullptr),
-    isEnd(false),
-    connected(true)
+#ifndef MSG_NOSIGNAL
+#define MSG_NOSIGNAL 0
+#endif
+
+static const int ACCEPT_POLL_MS = 100;
+static const size_t MAX_LINE = 1024;
+
+Client::Client(Server *server_, int ss_, const std::string &addr_):
+    server(server_), ss(ss_), addr(addr_), t(nullptr), connected(true)
 {
 }
 
 Client::~Client(){
-    isEnd = true;
+    shutdown(ss, SHUT_RDWR);
     if(t != nullptr){
         t->join();
         delete t;
@@ -33,70 +36,81 @@ void Client::start(){
     t = new std::thread(&Client::task, this);
 }
 
-int Client::Send(const uint8_t *send_data, int len){
+bool Client::send(const std::string &data){
     std::lock_guard<std::mutex> lock(send_mtx);
-    int sent = 0;
-    while(sent < len){
-        ssize_t r = send(ss, (const void*)(send_data + sent), (size_t)(len - sent), MSG_NOSIGNAL);
+    if(!connected)
+        return false;
+    size_t sent = 0;
+    while(sent < data.size()){
+        ssize_t r = ::send(ss, data.data() + sent, data.size() - sent, MSG_NOSIGNAL);
         if(r < 0){
             if(errno == EINTR)
                 continue;
-            return -1;
+            // Timeout or broken pipe: the reader thread reports the disconnection
+            return false;
         }
-        sent += r;
+        sent += (size_t)r;
     }
-    return sent;
+    return true;
 }
 
 void Client::task(){
-    while(!isEnd){
-        int len = read(ss, buf, sizeof(buf) / sizeof(buf[0]));
+    std::string buf;
+    char tmp[512];
+    while(true){
+        ssize_t len = read(ss, tmp, sizeof(tmp));
         if(len > 0){
-            ReceiveHandler handler = *onReceive;
-            if(handler != nullptr)
-                handler(this, buf, len);
+            buf.append(tmp, (size_t)len);
+            size_t pos;
+            while((pos = buf.find('\n')) != std::string::npos){
+                std::string line = buf.substr(0, pos);
+                buf.erase(0, pos + 1);
+                if(!line.empty() && line.back() == '\r')
+                    line.pop_back();
+                NetEvent e;
+                e.type = NetEvent::LINE;
+                e.client = this;
+                e.line = line;
+                server->pushEvent(e);
+            }
+            if(buf.size() > MAX_LINE)
+                break;      // garbage without newline
         }
-        else if(len == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)){
-            // Closed by the peer, or socket error
-            break;
+        else if(len == 0){
+            break;          // closed by the peer
+        }
+        else if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR){
+            continue;       // receive timeout: keep waiting
+        }
+        else{
+            break;          // socket error (or shutdown by the destructor)
         }
     }
     connected = false;
-}
-
-int Client::getSocket(){
-    return ss;
-}
-
-bool Client::isConnected(){
-    return connected;
+    NetEvent e;
+    e.type = NetEvent::DISCONNECT;
+    e.client = this;
+    server->pushEvent(e);
 }
 
 //
 
 Server::Server(uint16_t port):
-    onConnect(nullptr),
-    onReceive(nullptr)
+    s(-1), bound_port(0), stopping(false)
 {
     s = socket(AF_INET, SOCK_STREAM, 0);
     if(s < 0){
         perror("ERROR on socket");
         exit(1);
     }
+    int yes = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));   // sin_len / sin_zero must be zero on BSD / macOS
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons(port);
-
-    // To avoid "Address already in use"
-    int yes = 1;
-    if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char *)&yes, sizeof(yes)) < 0)
-    {
-        perror("ERROR on setsockopt (REUSEADDR)");
-        exit(1);
-    }
-
     if(bind(s, (struct sockaddr *)&addr, sizeof(addr))){
         perror("ERROR on bind");
         exit(1);
@@ -105,74 +119,103 @@ Server::Server(uint16_t port):
         perror("ERROR on listen");
         exit(1);
     }
-}
+    socklen_t alen = sizeof(addr);
+    if(getsockname(s, (struct sockaddr *)&addr, &alen) == 0)
+        bound_port = ntohs(addr.sin_port);
+    else
+        bound_port = port;
 
-Client* Server::waitClients(){
-    struct pollfd pfd;
-    pfd.fd = s;
-    pfd.events = POLLIN;
-    pfd.revents = 0;
-    if(poll(&pfd, 1, ACCEPT_TIMEOUT) <= 0)
-        return nullptr;
-
-    struct sockaddr_in client_addr;
-    socklen_t len = sizeof(struct sockaddr_in);
-    int ss = accept(s, (struct sockaddr *)&client_addr, &len);
-    if(ss < 0)
-        return nullptr;
-
-    // Set time out
-    struct timeval tv;
-    tv.tv_sec = SEND_RCV_TIMEOUT;
-    tv.tv_usec = 0;
-    if(setsockopt(ss, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv)) ||
-       setsockopt(ss, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(tv))){
-        perror("ERROR on setsockopt (RCVTIMEO / SNDTIMEO)");
-        close(ss);
-        return nullptr;
-    }
-
-    // Hold the lock until the client is registered, so that getClients() after replacing
-    // onConnect never misses a client accepted by the previous onConnect.
-    std::lock_guard<std::mutex> lock(clients_mtx);
-    Client *c = new Client(ss, &onReceive);
-    ConnectHandler handler = onConnect;
-    if(handler == nullptr || !handler(c)){
-        delete c;
-        return nullptr;
-    }
-    clients[ss] = c;
-    // Start receiving after onConnect, so that onReceive never runs before it
-    c->start();
-    return c;
+    accept_thread = std::thread(&Server::acceptLoop, this);
 }
 
 Server::~Server(){
-    for(auto itr = clients.begin(); itr != clients.end(); itr++){
-        Client *c = itr->second;
-        delete c;
-    }
+    stopping = true;
+    accept_thread.join();
+    std::vector<Client*> cs = getClients();
+    for(Client *c : cs)
+        closeClient(c);
     close(s);
+}
+
+void Server::acceptLoop(){
+    while(!stopping){
+        struct pollfd pfd;
+        pfd.fd = s;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        if(poll(&pfd, 1, ACCEPT_POLL_MS) <= 0)
+            continue;
+
+        struct sockaddr_in client_addr;
+        socklen_t len = sizeof(client_addr);
+        int ss = accept(s, (struct sockaddr *)&client_addr, &len);
+        if(ss < 0)
+            continue;
+
+        // A send that blocks for a long time would stall the tick, so give up quickly.
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        setsockopt(ss, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        setsockopt(ss, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        int yes = 1;
+        setsockopt(ss, IPPROTO_TCP, TCP_NODELAY, &yes, sizeof(yes));
+
+        char ip[INET_ADDRSTRLEN] = "?";
+        inet_ntop(AF_INET, &client_addr.sin_addr, ip, sizeof(ip));
+
+        Client *c = new Client(this, ss, ip);
+        {
+            std::lock_guard<std::mutex> lock(clients_mtx);
+            clients[ss] = c;
+        }
+        NetEvent e;
+        e.type = NetEvent::CONNECT;
+        e.client = c;
+        pushEvent(e);
+        c->start();
+    }
+}
+
+void Server::pushEvent(const NetEvent &e){
+    std::lock_guard<std::mutex> lock(events_mtx);
+    events.push_back(e);
+}
+
+size_t Server::pollEvents(std::vector<NetEvent> &out){
+    std::lock_guard<std::mutex> lock(events_mtx);
+    size_t n = events.size();
+    out.insert(out.end(), events.begin(), events.end());
+    events.clear();
+    return n;
 }
 
 void Server::closeClient(Client *c){
     {
         std::lock_guard<std::mutex> lock(clients_mtx);
-        clients.erase(c->getSocket());
+        clients.erase(c->id());
     }
     delete c;
+    // Drop queued events of this client, since the pointer is now dangling
+    std::lock_guard<std::mutex> lock(events_mtx);
+    for(auto itr = events.begin(); itr != events.end(); ){
+        if(itr->client == c)
+            itr = events.erase(itr);
+        else
+            ++itr;
+    }
 }
 
-void Server::broadcast(const uint8_t *send_data, int len){
+void Server::broadcast(const std::string &data){
     for(Client *c : getClients())
-        c->Send(send_data, len);
+        c->send(data);
 }
 
 std::vector<Client*> Server::getClients(){
     std::lock_guard<std::mutex> lock(clients_mtx);
     std::vector<Client*> v;
-    for(auto itr = clients.begin(); itr != clients.end(); itr++)
-        v.push_back(itr->second);
+    for(auto &kv : clients)
+        v.push_back(kv.second);
     return v;
 }
 

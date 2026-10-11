@@ -1,94 +1,89 @@
 #ifndef SERVER_CLIENT_HPP
 #define SERVER_CLIENT_HPP
 
-#define CLIENT_BUFFER_SIZE  32
-#define SEND_RCV_TIMEOUT    1       //[s]
-#define ACCEPT_TIMEOUT      100     //[ms]
+// TCP server with one reader thread per connection.
+// Received lines and connection changes are queued as NetEvents, and the main
+// thread drains the queue once per tick (Server::pollEvents). Nothing in the
+// game logic runs on the network threads.
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 class Server;
-class Client;
-
-typedef bool (*ConnectHandler)(Client *c);
-typedef void (*ReceiveHandler)(Client *c, uint8_t *receive_data, int len);
 
 class Client{
     public:
     friend Server;
-
-    // Destructor
     ~Client();
 
-    int Send(const uint8_t *send_data, int len);
+    // Send the bytes as they are (the caller appends '\n'). Thread safe.
+    // Returns false if the connection is broken.
+    bool send(const std::string &data);
 
-    int getSocket();
-
-    // false after the peer closed the connection (or a socket error occurred)
-    bool isConnected();
+    int id() const { return ss; }
+    bool isConnected() const { return connected; }
+    const std::string &address() const { return addr; }
 
     private:
-    // Constructor
-    Client(int ss_, std::atomic<ReceiveHandler> *onReceive_);
-
-    // Start receiving (called by Server after onConnect accepted the client)
+    Client(Server *server_, int ss_, const std::string &addr_);
     void start();
-
-    // socket
-    int ss;
-    std::atomic<ReceiveHandler> *onReceive;
-
-    // thread
-    std::thread *t;
     void task();
-    std::atomic<bool> isEnd;
+
+    Server *server;
+    int ss;
+    std::string addr;
+    std::thread *t;
     std::atomic<bool> connected;
-
-    // Send() can be called from several threads
     std::mutex send_mtx;
-
-    // Buffer
-    uint8_t buf[CLIENT_BUFFER_SIZE];
 };
 
-//
+struct NetEvent{
+    enum Type{ CONNECT, LINE, DISCONNECT } type;
+    Client *client;
+    std::string line;
+};
 
 class Server{
     public:
-    // Constructor
-    Server(uint16_t port);
-
-    // Destructor
+    friend Client;
+    explicit Server(uint16_t port);
     ~Server();
 
-    // Handlers can be replaced while clients are running
-    std::atomic<ConnectHandler> onConnect;
-    std::atomic<ReceiveHandler> onReceive;
+    // Port actually bound (useful when port 0 was requested)
+    uint16_t port() const { return bound_port; }
 
-    // Wait for a client up to ACCEPT_TIMEOUT.
-    // Returns nullptr on timeout, error or rejection by onConnect.
-    Client* waitClients();
+    // Move all pending events into out. Returns the number of events.
+    size_t pollEvents(std::vector<NetEvent> &out);
 
-    void broadcast(const uint8_t *send_data, int len);
+    void broadcast(const std::string &data);
 
+    // Close the socket and free the Client. Its pointer must not be used afterwards.
+    // Safe to call from the main thread after a DISCONNECT event, or at any time to kick.
     void closeClient(Client *c);
 
-    // Snapshot of the accepted clients
     std::vector<Client*> getClients();
     size_t clientCount();
 
     private:
-    int s;
+    void acceptLoop();
+    void pushEvent(const NetEvent &e);
 
-    // Guards clients (written by the accepting thread, read by the others)
+    int s;
+    uint16_t bound_port;
+    std::thread accept_thread;
+    std::atomic<bool> stopping;
+
     std::mutex clients_mtx;
     std::unordered_map<int, Client*> clients;
-};
 
+    std::mutex events_mtx;
+    std::deque<NetEvent> events;
+};
 
 #endif
