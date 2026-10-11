@@ -119,3 +119,25 @@
 ## 完了
 
 段階 0〜3 をすべて実装し、各段階で `make check` と pty 上の手動相当の確認を通した。ブランチ `feat/game-foundation` に小さな単位でコミット済み(push はしていない)。
+
+## 追加: ワンコマンド起動(2026-10-11)
+
+### やったこと
+
+- `A_client.py --host [--players N] [--bots N] [-- サーバの引数...]`。`--host` は `server/A_server --no-ui` を子プロセスで起動(バイナリがなければリポジトリ直下で `make`、それでも無ければエラー)、ログは `.bombconsole-server.log`(`.gitignore` 済み)。`--bots N` は `client/bot.py` を `--rounds 0`(セッション終了まで居続ける)で N 体起動し、`--host` なしでも指定・自動発見したサーバへ連れていく。`--players N`(既定 1、`--host` 時のみ)は `--autostart (players + bots)` をサーバに渡す。合計が 2 未満なら autostart を渡さず、ロビーに「everyone presses r (or g here)」と出す。`--host` なしの `--players` と `--` は警告して無視。
+- ホスト中のロビーに「others join with: python3 A_client.py 192.168.x.y」(サーバのログの `clients:` 行から取得)、自動開始の条件、サーバ停止の表示。`g` でサーバの標準入力に `g` 行を送って強制開始。
+- 終了処理: `q`、Ctrl-C、例外、サーバ切断のいずれでも `finally` で全子プロセスに SIGTERM → 3 秒待って SIGKILL。子プロセスは `start_new_session=True` で端末の Ctrl-C から切り離し、クライアントが責任を持って止める。サーバは SIGTERM で `g_stop` が立ち、結果の送信と `end` の配信をしてから終了する(既存の挙動)。
+- `make play BOTS=2`。README の「動かし方」を「1 人で試す / 友達とやる / 参加する」の 3 入口から始め、`--players` / `--bots` / `--autostart` の関係を表にした。サーバ単体の起動は「上級者向け」として後ろに回した。
+
+### 確認方法と結果
+
+- pty 上で `--host --bots 2 -- --time 30 --countdown 1` を起動: ロビーに自動開始の条件と参加コマンドが出て、3 人そろった時点でカウントダウン → 1 ラウンド完走 → 結果画面 → `q` で終了コード 0。1 秒後の `pgrep` で `A_server` / `bot.py` は残っていない。
+- `--host --players 2 --bots 1`: 1 人目(自分 + ボット 1 = 2)では開始せず待ち状態。手で `bot.py` を 1 つ足すと 3 人そろって「starting in 1 s」→ ラウンド開始。終了後にプロセスは残らない。
+- `--host --bots 1 -- --countdown 30`: カウントダウン中に `g` を押すと即開始(「force start sent」)。ラウンド中に SIGINT(Ctrl-C 相当)を送ると、クライアントは終了し、サーバとボットも残らない。サーバのログには結果まで記録されている。
+- `make check` → `CHECK OK`。
+
+### 未解決の点
+
+- `--host` はリポジトリの中から実行する前提(`server/` が必要)。`A_client.py` だけを配った人は「参加する」入口のみ。
+- サーバが起動済みでポート 10001 が使用中のときは、`--host` は「the server did not start」とログを表示して終了する。別ポートで立てるには `-- --port 10002`。
+- カウントダウン(既定 5 秒)は `--host --bots N` でも入る。短くしたければ `-- --countdown 1`。
