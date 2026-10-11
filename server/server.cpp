@@ -59,6 +59,7 @@ class Session{
     std::vector<Member> members;
     int round = 1;
     int session = 0;                // incremented when all rounds are played
+    bool autostart_done = false;    // --autostart applies to the first round only
     std::map<int, int> score;       // player id -> session score
     std::map<int, int> kills_total;
     unsigned seed_base;
@@ -307,7 +308,9 @@ void Session::run(){
             else if(k == 'g' && (int)members.size() >= std::max(1, std::min(cfg.min_players, 2)))
                 force = true;
 
-            bool want = allReady() || (cfg.autostart > 0 && (int)members.size() >= cfg.autostart);
+            // --autostart only brings up the first round; after that people press r
+            // (bots do so by themselves), so the result screen stays until they want more
+            bool want = allReady() || (cfg.autostart > 0 && !autostart_done && (int)members.size() >= cfg.autostart);
             if(force && (int)members.size() >= 1)
                 break;
             if(want && !counting){
@@ -341,6 +344,7 @@ void Session::run(){
             break;
 
         // ---- round ----
+        autostart_done = true;
         playRound();
     }
     server.broadcast("{\"t\":\"end\",\"msg\":\"server closed\"}\n");
