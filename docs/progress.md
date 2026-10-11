@@ -141,3 +141,21 @@
 - `--host` はリポジトリの中から実行する前提(`server/` が必要)。`A_client.py` だけを配った人は「参加する」入口のみ。
 - サーバが起動済みでポート 10001 が使用中のときは、`--host` は「the server did not start」とログを表示して終了する。別ポートで立てるには `-- --port 10002`。
 - カウントダウン(既定 5 秒)は `--host --bots N` でも入る。短くしたければ `-- --countdown 1`。
+
+## 追加: autostart の範囲とプロセスの後始末(2026-10-11)
+
+### やったこと
+
+- `--autostart` はサーバ起動後の最初のラウンドにだけ効くようにした。それまでは、`--rounds 1` のセッションが終わってロビーに戻ると接続数が条件を満たしたままで、人間が何もしなくても次が始まっていた。2 戦目からは全員の `READY`(ボットは自動、人間は結果画面で `r`)で開始する。結果画面は「r: play again   q: quit」と、準備完了済みの名前を出す。
+- クライアントに SIGTERM / SIGHUP のハンドラを登録し、`SystemExit` を投げて `finally` の子プロセス停止(SIGTERM → 3 秒 → SIGKILL)を必ず通す。`getch` は 20 ms タイムアウトで戻るので curses 画面中でも効く。
+- 二重の保険として、子プロセスの標準入力をクライアントが持つパイプにした。サーバ(`--no-ui`)は標準入力がパイプ(またはソケット)で EOF になったら `q` 相当で終了する(`/dev/null` やファイルの EOF では終了しない。`make check` は `/dev/null` を渡している)。ボットは標準入力が FIFO のときだけ監視スレッドを立て、EOF で `os._exit(0)`。これでクライアントが SIGKILL で消えても、端末ごと消えても、サーバとボットは残らない。`Host.stop` もまずパイプを閉じてから SIGTERM を送る。
+
+### 確認方法と結果
+
+- pty で `--host --bots 2 -- --time 20 --countdown 1 --port 10077 --discovery 0`: 結果画面で 10 秒放置してもサーバログの `round 1 start` は 1 回のまま。`r` を押すと「starting in 1 s」→ 2 戦目開始(`round 1 start` が 2 回)。`q` で全プロセス終了。
+- pty で `--host --bots 2` をゲーム中に (a) `kill -TERM`、(b) `kill -HUP`、(c) `kill -KILL`: クライアントは即終了(終了コード 143 / 129 / シグナル 9)、`A_server` と `bot.py` はいずれも 0.3 秒以内に `pgrep` から消えた。
+- `make check` → `CHECK OK`。
+
+### 未解決の点
+
+- ncurses 画面付きのサーバ(`--no-ui` なし)は標準入力の EOF では終了しない(`getch` 経由のため)。`--host` は常に `--no-ui` なので影響はない。
