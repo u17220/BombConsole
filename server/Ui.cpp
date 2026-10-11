@@ -2,6 +2,7 @@
 #include "Game.hpp"
 
 #include <poll.h>
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -80,6 +81,12 @@ int Ui::key(){
     ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
     if(n <= 0){
         stdin_closed = true;        // EOF or error: stop polling it
+        // When stdin is a pipe from a parent (A_client.py --host), EOF means the parent
+        // is gone: behave as if q was pressed so that no orphan server keeps the port.
+        // /dev/null or a file at EOF is not a reason to quit.
+        struct stat st;
+        if(fstat(STDIN_FILENO, &st) == 0 && (S_ISFIFO(st.st_mode) || S_ISSOCK(st.st_mode)))
+            return 'q';
         return 0;
     }
     return buf[0];
