@@ -8,28 +8,81 @@
 
 ## 1. 動かし方
 
-### 必要なもの
+必要なものは、サーバを立てる人が `g++` と `make`(Linux は ncurses の開発パッケージがあればサーバ画面付き、なくても動く)、全員が Python 3(標準ライブラリのみ)。Windows は WSL を使う。端末は UTF-8 で全角文字が表示できるもの(崩れるときは `--ascii`)。
 
-| | サーバ | クライアント |
-|---|---|---|
-| Linux | `g++`, `make`(ncurses の開発パッケージがあればサーバ画面付き、なければ画面なしで自動ビルド) | Python 3(標準ライブラリのみ) |
-| macOS | Xcode Command Line Tools(`g++` = clang, `make`)。ncurses は標準搭載 | 同左 |
-| Windows | WSL を使う | WSL を使う(ネイティブ Python には `curses` がない。`pip install windows-curses` で動けば動く、という扱い) |
+入口は 3 つ。どれも `A_client.py` 1 つで済む。
 
-端末は UTF-8 で全角文字が表示できるもの。表示が崩れる場合はクライアントを `--ascii` で起動する。
-
-### サーバ
+### 1 人で試す
 
 ```bash
-make            # server/A_server ができる(ncurses の有無は makefile が自動判定)
-make run        # ./server/A_server を起動
-# または
+git clone <このリポジトリ> && cd BombConsole
+python3 client/A_client.py --host --bots 2        # 自分 + ボット 2。3 人そろった時点で自動開始
+```
+
+`--host` がサーバを裏で起動し(未ビルドなら `make` も実行)、`--bots 2` がボットを 2 体つなぐ。`q` で抜けるとサーバもボットも止まる。`make play BOTS=2` も同じ。
+
+### 友達とやる(ホスト役)
+
+```bash
+python3 client/A_client.py --host --players 3 --bots 1   # 人間 3 + ボット 1 = 4 人そろったら自動開始
+python3 client/A_client.py --host                        # 人数を決めない: 全員が r を押したら開始(g で強制開始)
+```
+
+ロビーに「others join with: python3 A_client.py 192.168.x.y」と出るので、それを参加者に伝える。サーバのオプションは `--` の後ろに書く(例: `-- --time 90 --rounds 3`)。
+
+### 参加する
+
+```bash
+python3 client/A_client.py                  # 同じ LAN のサーバを自動で見つける
+python3 client/A_client.py 192.168.1.10     # 見つからなければアドレスを指定(host:port も可)
+```
+
+ホストから `client/A_client.py` 1 ファイルを受け取るだけでよい(`curl -O https://raw.githubusercontent.com/<owner>/BombConsole/master/client/A_client.py`)。
+
+### 開始条件の決まり方(`--players` / `--bots` / `--autostart`)
+
+| 指定 | サーバに渡るもの | 開始のタイミング |
+|---|---|---|
+| `--host --bots 2` | `--autostart 3`(自分 1 + ボット 2) | 3 人目が入った時点で 5 秒のカウントダウン |
+| `--host --players 3 --bots 1` | `--autostart 4` | 4 人そろった時点 |
+| `--host --players 2` | `--autostart 2` | 2 人目が入った時点 |
+| `--host`(= `--players 1`、ボットなし) | なし(合計 1 < 2) | 2 人以上が全員 `r`、またはホストが `g` |
+| `--host -- --autostart 5` | `--autostart 5`(後ろが優先) | 5 人そろった時点 |
+| `./server/A_server --autostart N` | | N 人そろった時点。`--players` と `--bots` はクライアント側の数え方で、サーバはこの合計しか見ない |
+
+`--players` は自分を含む人間の数(`--host` のときだけ有効)。`--bots` は `--host` なしでも使え、指定または自動発見したサーバへボットを連れていく。ボットはセッションが終わるまで居続ける。autostart の人数に達しなくても、全員が `r` を押せば始まる。
+
+### キー操作
+
+移動 = 矢印 / `WASD` / `hjkl`、ボム = `Space` / `z`、準備完了 = `r`、危険マス表示の切り替え = `t`、強制開始 = `g`(ホスト時)、退出 = `q`(ラウンド中は 1 秒以内に 2 回)。
+
+### クライアントのオプション
+
+| オプション | 内容 |
+|---|---|
+| `host[:port]` | 接続先。省略時は LAN 自動発見(UDP ブロードキャスト、ポート 10001)。環境変数 `BOMBCONSOLE_SERVER=host:port` でも可 |
+| `--host` | サーバ(`server/A_server --no-ui`)を子プロセスで起動して 127.0.0.1 に接続。サーバの出力はリポジトリ直下の `.bombconsole-server.log` |
+| `--players N` / `--bots N` | 上の表のとおり |
+| `-- ...` | 以降はサーバの引数(`--port` があればその値に接続) |
+| `--name 名前` | 名前(既定: 環境変数 `BOMBCONSOLE_NAME` > ログインユーザー名)。同名はサーバが `(2)` を付ける |
+| `--ascii` | ASCII 文字だけで描く(1 マス 2 桁)。既定は全角(1 マス 3 桁) |
+| `--no-threat` | 危険マス表示をオフで始める(`t` で切替) |
+
+画面: 上 1 行が HUD(名前、ボム 残/最大、火力、速度段階、生存者数、残り時間、サドンデス)。マップの下に「番号:名前」の凡例(死亡は `x`)。プレイヤーは色と番号で区別し、自分は反転。導火線が残り 1 秒を切ったボムは赤。今あるボムの炎が届くマスは赤背景の `・`。
+
+### サーバだけを立てる(上級者向け、常駐させる場合)
+
+`ssh` 先や教室の 1 台に置いておく場合は、サーバ単体で起動する(`--host` が裏でやっていることと同じ)。
+
+```bash
+make                               # server/A_server ができる(ncurses の有無は makefile が自動判定)
+./server/A_server                  # ncurses の観戦画面付き(make run でも同じ)
 ./server/A_server --no-ui          # 画面なし。ssh 先や tmux に置いておける
 ./server/A_server --help           # 全オプション
 ```
 
 - 起動すると待受ポートと、クライアントの起動コマンド例を表示する。
-- クライアントが接続すると名前一覧に出る。**2 人以上が全員 `r`(準備完了)を押すと 5 秒後に開始**する。サーバ画面の `g` で強制開始、`q` で終了(`--no-ui` のときは標準入力に `g` / `q` の行を入れても同じ)。
+- クライアントが接続すると名前一覧に出る。**2 人以上が全員 `r`(準備完了)を押すと 5 秒後に開始**する(`--autostart N` なら N 人そろった時点)。サーバ画面の `g` で強制開始、`q` で終了(`--no-ui` のときは標準入力に `g` / `q` の行を入れても同じ)。
 - ラウンドが終わると結果を全員に送り、接続を閉じずにロビーに戻る。クライアントは `r` でもう 1 戦できる。
 - パラメータは `--key value` と設定ファイル `server.conf`(`key = value`、1 行 1 項目、`#` 以降はコメント)で変えられる。引数が優先。例:
 
@@ -64,36 +117,15 @@ fuse = 2.5
 | `--item-fire N --item-bomb N --item-speed N` | 45 : 35 : 20 | アイテムの種類の比率 |
 | `--legacy-map` | | v1 の正方形マップ(`4*ceil(sqrt(n))-1`)を使う |
 
-### クライアント
-
-```bash
-python3 client/A_client.py                          # 引数なし: LAN 内のサーバを探して接続
-python3 client/A_client.py 192.168.1.10             # アドレスを指定
-python3 client/A_client.py 192.168.1.10:10002       # ポートも指定
-```
-
-- 引数なしのときは UDP ブロードキャスト(ポート 10001)で `BOMBCONSOLE?` を送り、1 秒待つ。1 台見つかればそのまま接続、複数なら番号で選ぶ、見つからなければアドレスの入力を促す。ブロードキャストが届かないネットワーク(VPN、ゲスト Wi-Fi、クライアント隔離のある AP)では、引数か環境変数 `BOMBCONSOLE_SERVER=host:port` で指定する。
-- サーバは起動時に自分の LAN アドレスを列挙し、`clients: python3 A_client.py 192.168.x.y` の形で表示する。
-- 名前は `--name 名前` > 環境変数 `BOMBCONSOLE_NAME` > ログインユーザー名。同名はサーバ側で `(2)` を付けて区別する。
-- `--ascii` で ASCII 文字だけで描く(1 マス 2 桁)。既定は全角文字(1 マス 3 桁)。
-- 操作: 移動 = 矢印 / `WASD` / `hjkl`、ボム = `Space` / `z`、準備完了 = `r`、危険マス表示の切り替え = `t`(既定オン。`--no-threat` でオフ始まり)、退出 = `q`(ラウンド中は 1 秒以内に 2 回)。
-- 画面: 上 1 行が HUD(自分の名前、ボム 残/最大、火力、速度段階、生存者数、残り時間、サドンデス)。マップの下に「番号:名前」の凡例(死亡は `x` 付き)。プレイヤーは色と番号で区別し、自分は反転表示。導火線が残り 1 秒を切ったボムは赤。今あるボムの炎が届くマスは赤背景(`・`)で示す。
-- クライアント側に入れるものは Python 3 だけ。配るときは `A_client.py` 1 ファイルを渡せばよい:
-
-```bash
-curl -O https://raw.githubusercontent.com/<owner>/BombConsole/master/client/A_client.py
-python3 A_client.py
-```
-
 ### ボット
 
 ```bash
-python3 client/bot.py <サーバ> [--name NAME] [--rounds N]
+python3 client/bot.py <サーバ> [--name NAME] [--rounds N]     # --rounds 0 でサーバが閉じるまで居続ける
 ```
 
 curses を使わない簡単なクライアント。接続して準備完了を送り、毎 tick の `state` から「危険マスにいれば逃げる → アイテムがあれば取りに行く → 敵かソフトブロックが炎の届く範囲にあり、逃げ道があればボムを置く → 目標へ寄る(サドンデス中は中央へ)」の順で判断する。1 人で試すときの相手、ヘッドレスの自動対戦(`make check`、バランスの集計)に使う。プロトコルの最小実装例でもある。強さの調整は目的にしない。
 
-### 同一マシンで試す
+### 同一マシンで別々に起動して試す
 
 ```bash
 make
@@ -101,6 +133,8 @@ make
 python3 client/A_client.py             # ターミナル 2(r を押す)
 python3 client/bot.py                  # ターミナル 3(自動で準備完了)
 ```
+
+1 つのターミナルで済ませるなら `python3 client/A_client.py --host --bots 1`。
 
 ### イベントログと集計(バランス調整)
 
@@ -123,7 +157,7 @@ make check
 
 ```
 BombConsole/
-├── makefile                 make / make run / make check
+├── makefile                 make / make run / make play / make check
 ├── server/                  C++11 サーバ
 │   ├── server.cpp           main: Session(ロビー → ラウンド → 結果 → ロビー)
 │   ├── Game.{hpp,cpp}       1 ラウンドのルール(マップ、プレイヤー、ボム、炎、順位)
@@ -243,7 +277,7 @@ TCP、既定ポート 10001。**1 行 1 メッセージ**(改行区切り)。ク
 
 ## 5. クライアント(`A_client.py`)
 
-1. 引数(または既定 127.0.0.1)に接続し、`HELLO 1 名前` を送る。受信スレッドが JSON 行を読んでキューに積む。
+1. 接続先を決めて(引数、自動発見、または `--host` で起動した 127.0.0.1 の子プロセス)、`HELLO 1 名前` を送る。受信スレッドが JSON 行を読んでキューに積む。`--host` のときは `Host` クラスが `server/A_server --no-ui` と `bot.py` を `subprocess` で起動し、ログの `listening on TCP port` 行でポートを確認してから接続する。終了時は SIGTERM → 3 秒 → SIGKILL で止める。
 2. `curses.wrapper` の中で 20 ms ごとにキューを空にして画面を更新し、キーを読む。例外や `Ctrl-C` でも端末は復元される。
 3. 画面は 3 種類。ロビー(名前一覧、準備状態、カウントダウン)、ゲーム(上 1 行 HUD、マップ、下に番号と名前の凡例)、結果(順位と死因)。結果画面は何かキーを押すとロビーに戻る。
 4. 端末がマップに足りない場合は「terminal too small」と必要サイズを出す。リサイズで再描画する。
