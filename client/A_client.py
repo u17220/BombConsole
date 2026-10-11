@@ -34,6 +34,7 @@ import locale
 import os
 import queue
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -206,8 +207,9 @@ class Host:
             print("warning: %s not found, no bots started" % bot, file=sys.stderr)
             return
         for i in range(n):
+            # stdin is a pipe we hold: the bot exits when it sees EOF (i.e. when we are gone)
             self.bots.append(self._spawn([sys.executable, bot, "%s:%d" % (host, port), "--name", "bot%d" % (i + 1),
-                                          "--rounds", "0", "--quiet", "--seed", str(i + 1)]))
+                                          "--rounds", "0", "--quiet", "--seed", str(i + 1)], stdin=subprocess.PIPE))
 
     def force_start(self):
         """Send a 'g' line to the server's stdin (same as pressing g on the server screen)."""
@@ -225,6 +227,14 @@ class Host:
 
     def stop(self):
         procs = [p for p in self.bots + [self.server] if p is not None]
+        # closing their stdin pipes tells them to leave (the same thing happens by itself
+        # if this process dies without reaching here, e.g. SIGKILL)
+        for p in procs:
+            if p.stdin:
+                try:
+                    p.stdin.close()
+                except OSError:
+                    pass
         for p in procs:
             if p.poll() is None:
                 try:
@@ -244,11 +254,6 @@ class Host:
                     p.wait(timeout=2)
                 except (OSError, subprocess.TimeoutExpired):
                     pass
-        if self.server is not None and self.server.stdin:
-            try:
-                self.server.stdin.close()
-            except OSError:
-                pass
         self.bots = []
         self.server = None
 
@@ -785,6 +790,11 @@ def main():
         sys.exit("cannot connect to %s:%d (%s)" % (host, opts["port"], e))
     client = Client(None, conn, opts)
     client.host = hosting if opts["hosting"] else None
+
+    def on_signal(signum, frame):
+        raise SystemExit(128 + signum)
+    for sig in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(sig, on_signal)
     if hosting and opts["bots"] > 0:
         hosting.start_bots(host, opts["port"], opts["bots"])
 
@@ -794,6 +804,8 @@ def main():
 
     try:
         curses.wrapper(wrapped)
+    except KeyboardInterrupt:
+        pass
     finally:
         conn.close()
         if hosting:
