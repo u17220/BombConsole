@@ -16,7 +16,8 @@ usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii] [--bots N]
   --        everything after it goes to the server, e.g. -- --time 90 --seed 3
   --name    player name (default: $BOMBCONSOLE_NAME, then the login user name)
   --ascii   draw with ASCII characters only (2 columns per square)
-  --no-threat  start with the danger highlight off (t toggles it)
+  --threat  start with the danger highlight on (squares the current bombs will reach;
+            t toggles it during the round)
 
 examples:
   python3 A_client.py --host --bots 2              # play alone against 2 bots
@@ -24,8 +25,7 @@ examples:
   python3 A_client.py                              # join a server on the LAN
 
 keys: arrows / WASD / hjkl = move, Space or z = bomb, r = ready, q = quit,
-      t = toggle the danger highlight (squares the current bombs will reach),
-      g = force start (when hosting)
+      t = toggle the danger highlight, g = force start (when hosting)
 """
 import curses
 import getpass
@@ -49,7 +49,7 @@ DOUBLE_Q_SEC = 1.0      # press q twice within this time to quit during a round
 
 
 def parse_args(argv):
-    opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False, "threat": True,
+    opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False, "threat": False,
             "hosting": False, "players": None, "bots": 0, "server_args": []}
     env = os.environ.get("BOMBCONSOLE_SERVER")
     if env:
@@ -70,6 +70,8 @@ def parse_args(argv):
             opts["name"] = a.split("=", 1)[1]
         elif a == "--ascii":
             opts["ascii"] = True
+        elif a == "--threat":
+            opts["threat"] = True
         elif a == "--no-threat":
             opts["threat"] = False
         elif a == "--host":
@@ -365,11 +367,12 @@ class Connection:
 
 # ---------------------------------------------------------------- drawing
 
-# character sets: (hard, soft, bomb, fire, dying, item F, item B, item S, players 1..8, empty)
+# Wide mode (v1 look): one square = 3 columns, a full-width character plus padding.
+# "■" is East Asian Ambiguous width, so its padding is measured at start-up (see Client.run);
+# the other characters are Wide everywhere. Players are 自 (me) / 敵 (others), told apart by colour.
 GLYPH_WIDE = {
-    "#": "＃", "+": "田", "o": "爆", "*": "炎", "x": "死",
+    "#": "■", "+": "岩", "o": "爆", "*": "炎", "x": "死",
     "F": "火", "B": "弾", "S": "速", " ": "　",
-    "1": "１", "2": "２", "3": "３", "4": "４", "5": "５", "6": "６", "7": "７", "8": "８",
 }
 GLYPH_ASCII = {c: c for c in "#+o*xFBS12345678 "}
 
@@ -440,6 +443,7 @@ class Client:
         self.dirty = True
         self.quit = False
         self.show_threat = opts["threat"]
+        self.block_pad = "  "       # spaces after ■ to make 3 columns (measured in run)
         self.host = None            # Host when --host
 
     # ---- messages from the server ----
@@ -646,6 +650,8 @@ class Client:
                 a = 0
                 if ch == "#":
                     a = attr(C_WALL)
+                    if not self.opts["ascii"]:
+                        text = "■" + self.block_pad
                 elif ch == "+":
                     a = attr(C_SOFT)
                 elif ch == "o":
@@ -659,7 +665,11 @@ class Client:
                 elif "1" <= ch <= "8":
                     pid = ord(ch) - ord("1")
                     base = C_PLAYER_THREAT if danger else C_PLAYER
-                    a = attr(base + pid % 8, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
+                    if self.opts["ascii"]:
+                        a = attr(base + pid % 8, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
+                    else:
+                        text = "自" if pid == self.me else "敵"
+                        a = attr(base + pid % 8, curses.A_BOLD)
                 elif danger:
                     a = attr(C_THREAT)
                     text = "." if self.opts["ascii"] else "・"
@@ -670,7 +680,10 @@ class Client:
         for p in st["players"]:
             n = self.names.get(p["id"], "?")[:8]
             tag = "" if p["st"] == "alive" else " x"
-            text = "%d:%s%s" % (p["id"] + 1, n, tag)
+            if self.opts["ascii"]:
+                text = "%d:%s%s" % (p["id"] + 1, n, tag)
+            else:
+                text = "%s%s" % (n, tag)      # colour tells who is who; mine is reversed
             if x + len(text) >= cols:
                 row += 1
                 x = 0
@@ -684,7 +697,7 @@ class Client:
         elif self.msg:
             put(scr, row + 1, 0, self.msg, attr(C_FIRE))
         else:
-            put(scr, row + 1, 0, "move: arrows/wasd  bomb: space  t: danger  q: quit"[:cols - 1])
+            put(scr, row + 1, 0, "move: arrows/wasd  bomb: space  q: quit"[:cols - 1])
 
     def draw_result(self):
         scr = self.scr
@@ -737,6 +750,15 @@ class Client:
         scr.keypad(True)
         curses.curs_set(0)
         init_colors()
+        if not self.opts["ascii"]:
+            # How many columns does curses give "■"? Pad it to 3 columns per square either way.
+            try:
+                scr.addstr(0, 0, "■")
+                _, w = scr.getyx()
+            except curses.error:
+                w = 1
+            self.block_pad = " " if w >= 2 else "  "
+            scr.erase()
         self.conn.send("HELLO %d %s" % (PROTO, self.my_name))
         while not self.quit:
             got = False
