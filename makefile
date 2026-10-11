@@ -17,3 +17,10 @@ clean:
 	$(MAKE) -C server clean
 
 .PHONY: all run check clean
+
+# one-command play: me + BOTS bots on a local server (make play BOTS=2)
+BOTS ?= 2
+play: server/A_server
+	$(PYTHON) client/A_client.py --host --bots $(BOTS) $(ARGS)
+
+.PHONY: play

@@ -3,6 +3,8 @@
 
 usage: python3 bot.py [host[:port]] [--name NAME] [--rounds N] [--quiet]
 
+  --rounds N  leave after N rounds (default 1). 0 = stay until the server closes
+
 Connects, says READY, and plays simple rules each tick:
   1. if my square is in danger (a bomb's fire reaches it), run to a safe square
   2. else if an item is reachable, go for it
@@ -215,7 +217,7 @@ class Bot:
                 rounds_done += 1
                 print(json.dumps(m, ensure_ascii=False))
                 sys.stdout.flush()
-                if rounds_done >= o["rounds"]:
+                if o["rounds"] > 0 and rounds_done >= o["rounds"]:
                     break
             elif t == "end" and "score" not in m:
                 break

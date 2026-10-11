@@ -1,17 +1,31 @@
 #!/usr/bin/env python3
 """BombConsole client (protocol v2). Python 3 standard library only.
 
-usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii]
+usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii] [--bots N]
+       python3 A_client.py --host [--players N] [--bots N] [-- server options...]
 
   host      server address. Without it the client looks for servers on the LAN
             (UDP broadcast) and connects to the one it finds; $BOMBCONSOLE_SERVER=host:port
             also works where broadcasts don't (VPN, guest Wi-Fi)
+  --host    start a server (server/A_server --no-ui) as a child process and join it.
+            Needs the repository (builds the server with make if necessary)
+  --bots N  also start N bots (client/bot.py) and bring them to the same server
+  --players N  humans expected including you (--host only, default 1). The server
+            starts automatically when players + bots have joined; if that is below 2,
+            the round starts with r as usual
+  --        everything after it goes to the server, e.g. -- --time 90 --seed 3
   --name    player name (default: $BOMBCONSOLE_NAME, then the login user name)
   --ascii   draw with ASCII characters only (2 columns per square)
   --no-threat  start with the danger highlight off (t toggles it)
 
+examples:
+  python3 A_client.py --host --bots 2              # play alone against 2 bots
+  python3 A_client.py --host --players 3 --bots 1  # host for 3 humans + 1 bot
+  python3 A_client.py                              # join a server on the LAN
+
 keys: arrows / WASD / hjkl = move, Space or z = bomb, r = ready, q = quit,
-      t = toggle the danger highlight (squares the current bombs will reach)
+      t = toggle the danger highlight (squares the current bombs will reach),
+      g = force start (when hosting)
 """
 import curses
 import getpass
@@ -19,7 +33,9 @@ import json
 import locale
 import os
 import queue
+import re
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -32,13 +48,17 @@ DOUBLE_Q_SEC = 1.0      # press q twice within this time to quit during a round
 
 
 def parse_args(argv):
-    opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False, "threat": True}
+    opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False, "threat": True,
+            "hosting": False, "players": None, "bots": 0, "server_args": []}
     env = os.environ.get("BOMBCONSOLE_SERVER")
     if env:
         opts["host"] = env
     i = 1
     while i < len(argv):
         a = argv[i]
+        if a == "--":
+            opts["server_args"] = argv[i + 1:]
+            break
         if a in ("-h", "--help"):
             print(__doc__.strip())
             sys.exit(0)
@@ -51,6 +71,18 @@ def parse_args(argv):
             opts["ascii"] = True
         elif a == "--no-threat":
             opts["threat"] = False
+        elif a == "--host":
+            opts["hosting"] = True
+        elif a == "--bots" and i + 1 < len(argv):
+            opts["bots"] = int(argv[i + 1])
+            i += 1
+        elif a.startswith("--bots="):
+            opts["bots"] = int(a.split("=", 1)[1])
+        elif a == "--players" and i + 1 < len(argv):
+            opts["players"] = int(argv[i + 1])
+            i += 1
+        elif a.startswith("--players="):
+            opts["players"] = int(a.split("=", 1)[1])
         elif a == "--port" and i + 1 < len(argv):
             opts["port"] = int(argv[i + 1])
             i += 1
@@ -67,7 +99,158 @@ def parse_args(argv):
         opts["name"] = os.environ.get("BOMBCONSOLE_NAME") or getpass.getuser()
     if os.environ.get("BOMBCONSOLE_ASCII"):
         opts["ascii"] = True
+    if opts["bots"] < 0:
+        opts["bots"] = 0
+    if opts["players"] is not None and not opts["hosting"]:
+        print("warning: --players only matters with --host; ignored", file=sys.stderr)
+        opts["players"] = None
+    if opts["server_args"] and not opts["hosting"]:
+        print("warning: server options after -- only matter with --host; ignored", file=sys.stderr)
+        opts["server_args"] = []
+    if opts["hosting"]:
+        if opts["players"] is None:
+            opts["players"] = 1
+        if opts["players"] < 1:
+            opts["players"] = 1
+        # the server must bind the port we connect to
+        for k, a in enumerate(opts["server_args"]):
+            if a == "--port" and k + 1 < len(opts["server_args"]):
+                opts["port"] = int(opts["server_args"][k + 1])
+            elif a.startswith("--port="):
+                opts["port"] = int(a.split("=", 1)[1])
+        if opts["host"]:
+            print("warning: --host starts a local server; the address %s is ignored" % opts["host"], file=sys.stderr)
+        opts["host"] = "127.0.0.1"
     return opts
+
+
+# ---------------------------------------------------------------- hosting (child processes)
+
+SERVER_LOG = ".bombconsole-server.log"
+
+
+class Host:
+    """Runs server/A_server --no-ui and client/bot.py as child processes and stops them at exit."""
+
+    def __init__(self):
+        self.root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.server = None
+        self.bots = []
+        self.port = None
+        self.log_path = None
+        self.addresses = []     # LAN addresses printed by the server
+        self.autostart = 0
+
+    def _spawn(self, args, **kw):
+        kw.setdefault("stdin", subprocess.DEVNULL)
+        kw.setdefault("stdout", subprocess.DEVNULL)
+        kw.setdefault("stderr", subprocess.STDOUT)
+        kw.setdefault("start_new_session", True)    # Ctrl-C reaches only us; we stop them ourselves
+        return subprocess.Popen(args, **kw)
+
+    def server_binary(self):
+        exe = os.path.join(self.root, "server", "A_server")
+        if os.path.exists(exe):
+            return exe
+        if not os.path.exists(os.path.join(self.root, "server", "makefile")):
+            sys.exit("--host needs the repository (server/ next to client/): %s not found\n"
+                     "get it with: git clone <BombConsole repository>" % exe)
+        print("building the server (make)...")
+        try:
+            r = subprocess.call(["make"], cwd=self.root)
+        except OSError as e:
+            sys.exit("cannot run make (%s). Install g++ and make, or start server/A_server yourself" % e)
+        if r != 0 or not os.path.exists(exe):
+            sys.exit("the server did not build. Check g++ / make, then run `make` in %s" % self.root)
+        return exe
+
+    def start_server(self, port, server_args, autostart):
+        exe = self.server_binary()
+        self.log_path = os.path.join(self.root, SERVER_LOG)
+        self.autostart = autostart
+        args = [exe, "--no-ui", "--port", str(port)]
+        if autostart >= 2:
+            args += ["--autostart", str(autostart)]
+        args += server_args
+        log = open(self.log_path, "w")
+        try:
+            self.server = self._spawn(args, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT)
+        finally:
+            log.close()
+        # wait for "listening on TCP port N" (and collect the "clients: ..." hints)
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if self.server.poll() is not None:
+                break
+            text = self.read_log()
+            m = re.search(r"listening on TCP port (\d+)", text)
+            if m and "clients:" in text:
+                self.port = int(m.group(1))
+                time.sleep(0.1)
+                self.addresses = re.findall(r"clients: python3 A_client.py (\S+)", self.read_log())
+                return self.port
+            time.sleep(0.1)
+        self.stop()
+        sys.exit("the server did not start. Its output (%s):\n%s" % (self.log_path, self.read_log()[-2000:]))
+
+    def read_log(self):
+        try:
+            with open(self.log_path, encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError:
+            return ""
+
+    def start_bots(self, host, port, n):
+        bot = os.path.join(self.root, "client", "bot.py")
+        if n > 0 and not os.path.exists(bot):
+            print("warning: %s not found, no bots started" % bot, file=sys.stderr)
+            return
+        for i in range(n):
+            self.bots.append(self._spawn([sys.executable, bot, "%s:%d" % (host, port), "--name", "bot%d" % (i + 1),
+                                          "--rounds", "0", "--quiet", "--seed", str(i + 1)]))
+
+    def force_start(self):
+        """Send a 'g' line to the server's stdin (same as pressing g on the server screen)."""
+        if self.server is None or self.server.stdin is None or self.server.poll() is not None:
+            return False
+        try:
+            self.server.stdin.write(b"g\n")
+            self.server.stdin.flush()
+            return True
+        except OSError:
+            return False
+
+    def server_alive(self):
+        return self.server is not None and self.server.poll() is None
+
+    def stop(self):
+        procs = [p for p in self.bots + [self.server] if p is not None]
+        for p in procs:
+            if p.poll() is None:
+                try:
+                    p.terminate()
+                except OSError:
+                    pass
+        deadline = time.time() + 3
+        for p in procs:
+            while p.poll() is None and time.time() < deadline:
+                time.sleep(0.05)
+            if p.poll() is None:
+                try:
+                    p.kill()
+                except OSError:
+                    pass
+                try:
+                    p.wait(timeout=2)
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
+        if self.server is not None and self.server.stdin:
+            try:
+                self.server.stdin.close()
+            except OSError:
+                pass
+        self.bots = []
+        self.server = None
 
 
 # ---------------------------------------------------------------- discovery
@@ -252,6 +435,7 @@ class Client:
         self.dirty = True
         self.quit = False
         self.show_threat = opts["threat"]
+        self.host = None            # Host when --host
 
     # ---- messages from the server ----
 
@@ -326,6 +510,13 @@ class Client:
         if self.screen == "lobby":
             if c in (ord("r"), ord("R"), ord(" ")):
                 self.toggle_ready()
+            elif c in (ord("g"), ord("G")) and self.host:
+                n = len(self.lobby["players"]) if self.lobby else 0
+                if n >= 2:
+                    self.msg = "force start sent" if self.host.force_start() else "cannot reach the server"
+                else:
+                    self.msg = "need 2 or more players to start"
+                self.dirty = True
             return
         # game
         if c in self.DIRS:
@@ -364,7 +555,7 @@ class Client:
     def draw_lobby(self):
         scr = self.scr
         put(scr, 0, 0, "BombConsole  server: %s" % self.server_name, attr(C_HUD, curses.A_BOLD))
-        put(scr, 1, 0, "r: ready / not ready    q: quit")
+        put(scr, 1, 0, "r: ready / not ready    q: quit" + ("    g: force start" if self.host else ""))
         row = 3
         if self.lobby:
             n = len(self.lobby["players"])
@@ -383,6 +574,22 @@ class Client:
                 row += 1
         else:
             put(scr, 2, 0, "connecting...")
+        if self.host:
+            row += 1
+            put(scr, row, 0, "hosting (server log: %s)" % os.path.basename(self.host.log_path or ""), attr(C_HUD))
+            row += 1
+            if self.host.autostart >= 2:
+                put(scr, row, 0, "  starts automatically when %d have joined (humans %d + bots %d)" % (
+                    self.host.autostart, self.opts["players"], self.opts["bots"]))
+            else:
+                put(scr, row, 0, "  no autostart: everyone presses r (or g here) when all are in")
+            row += 1
+            for a in self.host.addresses or ["<this host>"]:
+                put(scr, row, 0, "  others join with: python3 A_client.py %s" % a, attr(C_ITEM))
+                row += 1
+            if not self.host.server_alive():
+                put(scr, row, 0, "  the server has stopped", attr(C_FIRE))
+                row += 1
         if self.msg:
             put(scr, row + 1, 0, self.msg, attr(C_FIRE))
 
@@ -556,7 +763,12 @@ def main():
         if "utf" not in enc:
             opts["ascii"] = True
     host = opts["host"]
-    if not host:
+    hosting = Host() if opts["hosting"] or opts["bots"] > 0 else None
+    if opts["hosting"]:
+        total = opts["players"] + opts["bots"]
+        hosting.start_server(opts["port"], opts["server_args"], total if total >= 2 else 0)
+        opts["port"] = hosting.port
+    elif not host:
         try:
             host, opts["port"] = choose_server(opts["port"])
         except (EOFError, KeyboardInterrupt):
@@ -564,8 +776,13 @@ def main():
     try:
         conn = Connection(host, opts["port"])
     except OSError as e:
+        if hosting:
+            hosting.stop()
         sys.exit("cannot connect to %s:%d (%s)" % (host, opts["port"], e))
     client = Client(None, conn, opts)
+    client.host = hosting if opts["hosting"] else None
+    if hosting and opts["bots"] > 0:
+        hosting.start_bots(host, opts["port"], opts["bots"])
 
     def wrapped(scr):
         client.scr = scr
@@ -575,11 +792,15 @@ def main():
         curses.wrapper(wrapped)
     finally:
         conn.close()
+        if hosting:
+            hosting.stop()
     r = client.result
     if r:
         print("ROUND %d RESULT" % r["round"])
         for p in r["ranking"]:
             print("%d. %s (%s, kills %d)" % (p["rank"], p["name"], p["cause"], p["kills"]))
+    if hosting and hosting.log_path:
+        print("server log: %s" % hosting.log_path)
 
 
 if __name__ == "__main__":
