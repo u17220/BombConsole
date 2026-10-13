@@ -383,8 +383,10 @@ GLYPH_ASCII = {c: c for c in "#+o*xFBS12345678 "}
 C_WALL, C_SOFT, C_BOMB, C_FIRE, C_ITEM, C_DYING, C_THREAT, C_HUD, C_BOMB_SOON = range(1, 10)
 C_FUSE, C_FUSE_SOON, C_ITEM_F, C_ITEM_B, C_ITEM_S = range(30, 35)
 C_ITEMS = {"F": C_ITEM_F, "B": C_ITEM_B, "S": C_ITEM_S}
-C_PLAYER = 10   # + player id (0..7)
+C_PLAYER = 10   # + player id (0..7); all the same colour (v1 look: every enemy is a green 敵)
 C_PLAYER_THREAT = 20    # + player id, on a threatened square
+C_ME = 18               # myself (white, reversed on the map)
+C_ME_THREAT = 28
 
 
 def init_colors():
@@ -412,11 +414,13 @@ def init_colors():
     curses.init_pair(C_ITEM_F, curses.COLOR_BLACK, curses.COLOR_YELLOW)
     curses.init_pair(C_ITEM_B, curses.COLOR_BLACK, curses.COLOR_CYAN)
     curses.init_pair(C_ITEM_S, curses.COLOR_BLACK, curses.COLOR_GREEN)
-    pc = [curses.COLOR_CYAN, curses.COLOR_GREEN, curses.COLOR_YELLOW, curses.COLOR_MAGENTA,
-          curses.COLOR_RED, curses.COLOR_BLUE, curses.COLOR_WHITE, curses.COLOR_CYAN]
+    # Every other player is green (as in v1); red / blue / yellow / cyan would clash with
+    # fire, bombs and items. I am white.
     for i in range(8):
-        curses.init_pair(C_PLAYER + i, pc[i], bg)
-        curses.init_pair(C_PLAYER_THREAT + i, pc[i], curses.COLOR_RED)
+        curses.init_pair(C_PLAYER + i, curses.COLOR_GREEN, bg)
+        curses.init_pair(C_PLAYER_THREAT + i, curses.COLOR_GREEN, curses.COLOR_RED)
+    curses.init_pair(C_ME, curses.COLOR_WHITE, bg)
+    curses.init_pair(C_ME_THREAT, curses.COLOR_WHITE, curses.COLOR_RED)
 
 
 def attr(pair, extra=0):
@@ -597,7 +601,7 @@ class Client:
                 line = " %d. %-16s %s" % (p["id"] + 1, p["name"][:16], "READY" if p["ready"] else "")
                 if self.lobby.get("rounds", 1) > 1:
                     line += "  score %d" % p.get("score", 0)
-                put(scr, row, 0, line, attr(C_PLAYER + p["id"] % 8, curses.A_REVERSE if me else 0))
+                put(scr, row, 0, line, attr(C_ME if me else C_PLAYER, curses.A_REVERSE if me else 0))
                 row += 1
         else:
             put(scr, 2, 0, "connecting...")
@@ -692,12 +696,15 @@ class Client:
                     a = attr(C_ITEMS[ch])
                 elif "1" <= ch <= "8":
                     pid = ord(ch) - ord("1")
-                    base = C_PLAYER_THREAT if danger else C_PLAYER
+                    if pid == self.me:
+                        pair = C_ME_THREAT if danger else C_ME
+                    else:
+                        pair = (C_PLAYER_THREAT if danger else C_PLAYER) + pid % 8
                     if self.opts["ascii"]:
-                        a = attr(base + pid % 8, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
+                        a = attr(pair, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
                     else:
                         text = "自" if pid == self.me else "敵"
-                        a = attr(base + pid % 8, curses.A_BOLD)
+                        a = attr(pair, curses.A_BOLD)
                 elif danger:
                     a = attr(C_THREAT)
                     text = "." if self.opts["ascii"] else "・"
@@ -713,11 +720,12 @@ class Client:
             if self.opts["ascii"]:
                 text = "%d:%s%s" % (p["id"] + 1, n, tag)
             else:
-                text = "%s%s" % (n, tag)      # colour tells who is who; mine is reversed
+                text = "%s%s" % (n, tag)      # others are green, mine is white and reversed
             if x + len(text) >= cols:
                 row += 1
                 x = 0
-            a = attr(C_PLAYER + p["id"] % 8, curses.A_REVERSE if p["id"] == self.me else 0)
+            me = p["id"] == self.me
+            a = attr(C_ME if me else C_PLAYER, curses.A_REVERSE if me else 0)
             if p["st"] != "alive":
                 a = attr(C_DYING)
             put(scr, row, x, text, a)
@@ -765,7 +773,8 @@ class Client:
             line = "%d. %-16s %-24s kills %d" % (p["rank"], p["name"][:16], why, p["kills"])
             if r["rounds"] > 1:
                 line += "  score %d" % p.get("score", 0)
-            put(scr, row, 0, line, attr(C_PLAYER + p["id"] % 8, curses.A_REVERSE if p["id"] == self.me else 0))
+            me = p["id"] == self.me
+            put(scr, row, 0, line, attr(C_ME if me else C_PLAYER, curses.A_REVERSE if me else 0))
             row += 1
         if self.end and "score" in self.end and self.end.get("rounds", 1) > 1:
             row += 1
