@@ -368,11 +368,12 @@ class Connection:
 
 # ---------------------------------------------------------------- drawing
 
-# Wide mode (v1 look): one square = 3 columns, a full-width character plus padding.
-# "■" is East Asian Ambiguous width, so its padding is measured at start-up (see Client.run);
-# the other characters are Wide everywhere. Players are 自 (me) / 敵 (others), told apart by colour.
+# Wide mode: one square = 3 columns, a full-width character plus padding.
+# Every character is Wide, so curses and the terminal agree on the width. (The v1 "■" is East Asian
+# Ambiguous: curses counts 1 column, a CJK-font terminal draws 2, and each wall pushed the row 1 column off.)
+# Players are 自 (me) / 敵 (others), told apart by colour.
 GLYPH_WIDE = {
-    "#": "■", "+": "岩", "o": "爆", "*": "炎", "x": "死",
+    "#": "壁", "+": "岩", "o": "爆", "*": "炎", "x": "死",
     "F": "力", "B": "玉", "S": "速", " ": "　",
 }
 ITEM_NAMES_WIDE = (("F", "火力+"), ("B", "ボム+"), ("S", "速度+"))
@@ -465,7 +466,6 @@ class Client:
         self.dirty = True
         self.quit = False
         self.show_threat = opts["threat"]
-        self.block_pad = "  "       # spaces after ■ to make 3 columns (measured in run)
         self.host = None            # Host when --host
 
     # ---- messages from the server ----
@@ -674,8 +674,6 @@ class Client:
                 a = 0
                 if ch == "#":
                     a = attr(C_WALL)
-                    if not self.opts["ascii"]:
-                        text = "■" + self.block_pad
                 elif ch == "+":
                     a = attr(C_SOFT)
                 elif ch == "o":
@@ -798,15 +796,6 @@ class Client:
         scr.keypad(True)
         curses.curs_set(0)
         init_colors()
-        if not self.opts["ascii"]:
-            # How many columns does curses give "■"? Pad it to 3 columns per square either way.
-            try:
-                scr.addstr(0, 0, "■")
-                _, w = scr.getyx()
-            except curses.error:
-                w = 1
-            self.block_pad = " " if w >= 2 else "  "
-            scr.erase()
         self.conn.send("HELLO %d %s" % (PROTO, self.my_name))
         while not self.quit:
             got = False
