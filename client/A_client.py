@@ -863,8 +863,9 @@ def main():
 
     def on_signal(signum, frame):
         raise SystemExit(128 + signum)
-    for sig in (signal.SIGTERM, signal.SIGHUP):
-        signal.signal(sig, on_signal)
+    for name in ("SIGTERM", "SIGHUP"):     # SIGHUP does not exist on Windows
+        if hasattr(signal, name):
+            signal.signal(getattr(signal, name), on_signal)
     if hosting and opts["bots"] > 0:
         hosting.start_bots(host, opts["port"], opts["bots"])
 
