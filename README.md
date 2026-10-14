@@ -39,7 +39,7 @@ python3 client/A_client.py --host --bots 2      # 自分 + ボット 2 体。そ
 ### 動作環境
 
 - 端末は UTF-8 で全角文字が出るもの。表示が崩れるときは `--ascii` を付ける。
-- Windows は WSL を使う(ネイティブの Python には `curses` がない)。
+- Windows: ネイティブの Python には `curses` がないので、`pip install windows-curses` を入れる。表示は ASCII(`o` `+` など)になる。全角の見た目(`爆` `岩` など)で遊ぶなら WSL(`wsl --install`)の中で動かす。
 
 ## 遊び方
 
