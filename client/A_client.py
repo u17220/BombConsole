@@ -662,7 +662,7 @@ class Client:
         put(scr, 0, 0, hud[:cols - 1], attr(C_HUD, curses.A_BOLD))
         if st.get("sd"):
             put(scr, 0, hud.index("SUDDEN"), "SUDDEN DEATH", attr(C_FIRE, curses.A_BOLD | curses.A_BLINK))
-        self.draw_map(st)
+        self.draw_map(st, show_dying=bool(self.frozen))
         # legend (bottom)
         row = 1 + self.start["h"]
         x = 0
@@ -700,7 +700,7 @@ class Client:
         else:
             put(scr, row + 1, 0, "move: arrows/wasd  bomb: space  q: quit"[:cols - 1])
 
-    def draw_map(self, st):
+    def draw_map(self, st, show_dying=False):
         scr = self.scr
         g = self.glyph
         threat = st.get("threat") if self.show_threat else None
@@ -746,13 +746,18 @@ class Client:
                         a = attr(pair, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
                     else:
                         text = "自" if pid == self.me else "敵"
-                        a = attr(pair, curses.A_BOLD)
+                        a = attr(pair, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
                 elif danger:
                     a = attr(C_THREAT)
                     text = "." if self.opts["ascii"] else "・"
                 put(scr, 1 + y, x * self.cell_w, text, a)
         for fy, fx, ftext, fa in fuses:
             put(scr, fy, fx, ftext, fa)
+        if show_dying:
+            # the map has fire over a player who died in it: write the death mark back on the square
+            for p in st["players"]:
+                if p["st"] == "dying":
+                    put(scr, 1 + p["y"], p["x"] * self.cell_w, g["x"], attr(C_DYING))
 
     def result_lines(self):
         """The ranking block as (text, attr) lines."""
@@ -809,11 +814,11 @@ class Client:
                 # the map stays as it was when the round was decided; the ranking goes under it
                 # (the title on the row above it), or beside it when there is no room below
                 if rows >= 1 + mh + len(lines) - 1:
-                    self.draw_map(st)
+                    self.draw_map(st, show_dying=True)
                     put(scr, 0, 0, *lines[0])
                     x0, y0, first = 0, 1 + mh, 1
                 elif cols >= mw + 2 + max(dispw(t) for t, _ in lines):
-                    self.draw_map(st)
+                    self.draw_map(st, show_dying=True)
                     x0 = mw + 2
         for i, (text, a) in enumerate(lines[first:]):
             put(scr, y0 + i, x0, text, a)
