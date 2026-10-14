@@ -724,8 +724,8 @@ class Client:
             if x + len(text) >= cols:
                 row += 1
                 x = 0
-            me = p["id"] == self.me
-            a = attr(C_ME if me else C_PLAYER, curses.A_REVERSE if me else 0)
+            mine = p["id"] == self.me
+            a = attr(C_ME if mine else C_PLAYER, curses.A_REVERSE if mine else 0)
             if p["st"] != "alive":
                 a = attr(C_DYING)
             put(scr, row, x, text, a)
