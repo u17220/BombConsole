@@ -10,7 +10,7 @@
 
 #include "Config.hpp"
 
-enum class Cause{ NONE, KILLED, SUICIDE, SUDDEN_DEATH, DISCONNECT, TIMEOUT };
+enum class Cause{ NONE, KILLED, SUICIDE, SUDDEN_DEATH, DISCONNECT, TIMEOUT, SKY_BOMB };
 
 struct GamePlayer{
     int id = 0;                 // player number 0..7 (stable within a session)
@@ -50,7 +50,7 @@ struct Bomb{
 };
 
 struct GameEvent{               // for the result message and the event log
-    std::string type;           // "kill", "suicide", "suddendeath", "disconnect", "timeout", "bomb", "explode", "item"
+    std::string type;           // "kill", "suicide", "suddendeath", "skybomb", "disconnect", "timeout", "bomb", "explode", "item"
     int tick;
     int actor;                  // player id
     int target;                 // player id or -1
@@ -108,6 +108,7 @@ class Game{
     void burn(int x, int y, int owner);
     void kill(GamePlayer &p, Cause cause, int killer);
     void advanceSuddenDeath();
+    void dropSkyBomb();
     void dropItem(int x, int y);
 
     const Config &cfg;
@@ -129,6 +130,7 @@ class Game{
     size_t sd_next = 0;
     int sd_start_tick = 0;      // tick when the walls start closing (0 = never)
     int sd_interval = 5;        // ticks between two closings
+    int sd_bomb_interval = 0;   // ticks between two bombs from the sky (0 = none)
 };
 
 #endif

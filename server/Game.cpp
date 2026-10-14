@@ -13,6 +13,8 @@ Game::Game(const Config &cfg_, unsigned seed) : cfg(cfg_), rng(seed){
     if(limit_ticks > 0 && cfg.sudden_death > 0 && cfg.sd_rate > 0){
         sd_start_tick = std::max(1, limit_ticks - (int)lround(cfg.sudden_death * 1000.0 / cfg.tick_ms));
         sd_interval = std::max(1, (int)lround(1000.0 / cfg.tick_ms / cfg.sd_rate));
+        if(cfg.sd_bomb > 0)
+            sd_bomb_interval = std::max(1, (int)lround(1000.0 / cfg.tick_ms / cfg.sd_bomb));
     }
 }
 
@@ -24,6 +26,7 @@ const char *Game::causeName(Cause c){
         case Cause::SUDDEN_DEATH: return "suddendeath";
         case Cause::DISCONNECT: return "disconnect";
         case Cause::TIMEOUT: return "timeout";
+        case Cause::SKY_BOMB: return "skybomb";
     }
     return "?";
 }
@@ -224,6 +227,7 @@ void Game::kill(GamePlayer &p, Cause cause, int killer){
         case Cause::SUDDEN_DEATH: e.type = "suddendeath"; break;
         case Cause::DISCONNECT: e.type = "disconnect"; break;
         case Cause::TIMEOUT: e.type = "timeout"; break;
+        case Cause::SKY_BOMB: e.type = "skybomb"; break;
         case Cause::NONE: break;
     }
     evs.push_back(e);
@@ -323,6 +327,28 @@ void Game::advanceSuddenDeath(){
             kill(p, Cause::SUDDEN_DEATH, -1);
 }
 
+// A bomb with no owner lands on a random free square. It has the normal fuse and fire, so it is
+// seen coming; the kill is nobody's (cause skybomb).
+void Game::dropSkyBomb(){
+    if(sd_bomb_interval <= 0 || ticks < sd_start_tick || (ticks - sd_start_tick) % sd_bomb_interval != 0)
+        return;
+    std::vector<std::pair<int, int>> free_sq;
+    for(int y = 0; y < h; y++)
+        for(int x = 0; x < w; x++)
+            if(grid[y][x].kind == ' ' && !bombAt(x, y))
+                free_sq.push_back(std::make_pair(x, y));
+    if(free_sq.empty())
+        return;
+    std::uniform_int_distribution<size_t> pick(0, free_sq.size() - 1);
+    std::pair<int, int> sq = free_sq[pick(rng)];
+    Bomb b;
+    b.x = sq.first; b.y = sq.second; b.owner = -1; b.power = cfg.power; b.fuse = fuse_ticks;
+    bs.push_back(b);
+    GameEvent e;
+    e.type = "bomb"; e.tick = ticks; e.actor = -1; e.target = -1;
+    evs.push_back(e);
+}
+
 void Game::tick(){
     if(over)
         return;
@@ -398,8 +424,10 @@ void Game::tick(){
     }
 
     // 3. sudden death closes one square, then items, fire and walls
-    if(limit_ticks > 0)
+    if(limit_ticks > 0){
         advanceSuddenDeath();
+        dropSkyBomb();
+    }
     for(GamePlayer &p : ps){
         if(!p.alive())
             continue;
@@ -418,8 +446,12 @@ void Game::tick(){
         }
         if(c.kind == '#')
             kill(p, Cause::SUDDEN_DEATH, -1);
-        else if(c.fire_until > ticks)
-            kill(p, c.fire_owner == p.id ? Cause::SUICIDE : Cause::KILLED, c.fire_owner);
+        else if(c.fire_until > ticks){
+            if(c.fire_owner < 0)
+                kill(p, Cause::SKY_BOMB, -1);
+            else
+                kill(p, c.fire_owner == p.id ? Cause::SUICIDE : Cause::KILLED, c.fire_owner);
+        }
     }
 
     // 4. dying -> dead
@@ -614,7 +646,7 @@ std::string Game::resultJson(int round, int rounds, const std::vector<int> &scor
     s += "],\"events\":[";
     bool first = true;
     for(const GameEvent &e : evs){
-        if(e.type == "kill" || e.type == "suicide" || e.type == "suddendeath" || e.type == "disconnect"){
+        if(e.type == "kill" || e.type == "suicide" || e.type == "suddendeath" || e.type == "skybomb" || e.type == "disconnect"){
             if(!first) s += ",";
             first = false;
             s += "{\"type\":" + json::str(e.type) + ",\"tick\":" + json::num(e.tick)

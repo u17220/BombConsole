@@ -35,6 +35,7 @@ struct Config{
     double time_limit = 120;        // seconds, 0 = none
     double sudden_death = 30;       // seconds before the end when the walls start closing (0 = off)
     double sd_rate = 4;             // squares closed per second
+    double sd_bomb = 0.5;           // bombs dropped from the sky per second during sudden death (0 = off)
     int soft_pct = 60;              // % of free squares filled with soft blocks (3+ players)
     int soft_pct_2p = -1;           // same for 2 players (-1 = soft_pct - 10)
     int item_pct = 35;              // % of soft blocks that drop an item
