@@ -52,6 +52,7 @@ bool Config::set(const std::string &key, const std::string &value, std::string &
     else if(key == "autostart") ok = toInt(value, autostart);
     else if(key == "fuse") ok = toDouble(value, fuse);
     else if(key == "fire") ok = toDouble(value, fire);
+    else if(key == "chain-delay" || key == "chain_delay") ok = toInt(value, chain_delay);
     else if(key == "bombs") ok = toInt(value, bombs);
     else if(key == "bombs-max" || key == "bombs_max") ok = toInt(value, bombs_max);
     else if(key == "power") ok = toInt(value, power);
@@ -191,6 +192,7 @@ std::string Config::usage(){
     "  --tick MS         tick length in ms (50)\n"
     "  --fuse S          bomb fuse in seconds (2.5)\n"
     "  --fire S          fire duration in seconds (0.5)\n"
+    "  --chain-delay N   ticks a bomb hit by fire waits before it explodes (1, 0 = same tick)\n"
     "  --bombs N         initial bombs at once (1), --bombs-max N (6)\n"
     "  --power N         initial fire length (2), --power-max N (8)\n"
     "  --speed N         ticks per square (5), --speed-min N (3)\n"

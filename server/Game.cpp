@@ -274,8 +274,12 @@ void Game::explode(size_t bi, std::vector<size_t> &chain){
             bool chained = false;
             for(size_t j = 0; j < bs.size(); j++){
                 if(bs[j].x == fx && bs[j].y == fy && bs[j].fuse > 0){
-                    bs[j].fuse = 0;         // chain reaction in the same tick
-                    chain.push_back(j);
+                    if(cfg.chain_delay <= 0){
+                        bs[j].fuse = 0;     // chain reaction in the same tick
+                        chain.push_back(j);
+                    }
+                    else if(bs[j].fuse > cfg.chain_delay)
+                        bs[j].fuse = cfg.chain_delay;   // goes off a moment later, so the blast ripples
                     chained = true;
                 }
             }

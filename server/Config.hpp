@@ -25,6 +25,7 @@ struct Config{
     // Rules
     double fuse = 2.5;              // seconds
     double fire = 0.5;              // seconds
+    int chain_delay = 1;            // ticks a bomb hit by fire waits before it explodes (0 = same tick)
     int bombs = 1;                  // initial bombs at once
     int bombs_max = 6;
     int power = 2;                  // initial fire length (excluding the center)
