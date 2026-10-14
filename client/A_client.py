@@ -837,7 +837,7 @@ class Client:
 def main():
     opts = parse_args(sys.argv)
     locale.setlocale(locale.LC_ALL, "")
-    if not opts["ascii"]:
+    if not opts["ascii"] and sys.platform != "win32":    # windows-curses draws UTF-16 whatever the code page is
         enc = (locale.getpreferredencoding(False) or "").lower()
         if "utf" not in enc:
             opts["ascii"] = True
