@@ -52,6 +52,7 @@ bool Config::set(const std::string &key, const std::string &value, std::string &
     else if(key == "autostart") ok = toInt(value, autostart);
     else if(key == "fuse") ok = toDouble(value, fuse);
     else if(key == "fire") ok = toDouble(value, fire);
+    else if(key == "chain-delay" || key == "chain_delay") ok = toInt(value, chain_delay);
     else if(key == "bombs") ok = toInt(value, bombs);
     else if(key == "bombs-max" || key == "bombs_max") ok = toInt(value, bombs_max);
     else if(key == "power") ok = toInt(value, power);
@@ -62,6 +63,7 @@ bool Config::set(const std::string &key, const std::string &value, std::string &
     else if(key == "time") ok = toDouble(value, time_limit);
     else if(key == "sudden-death" || key == "sudden_death") ok = toDouble(value, sudden_death);
     else if(key == "sd-rate" || key == "sd_rate") ok = toDouble(value, sd_rate);
+    else if(key == "sd-bomb" || key == "sd_bomb") ok = toDouble(value, sd_bomb);
     else if(key == "soft") ok = toInt(value, soft_pct);
     else if(key == "soft-2p" || key == "soft_2p") ok = toInt(value, soft_pct_2p);
     else if(key == "item") ok = toInt(value, item_pct);
@@ -190,6 +192,7 @@ std::string Config::usage(){
     "  --tick MS         tick length in ms (50)\n"
     "  --fuse S          bomb fuse in seconds (2.5)\n"
     "  --fire S          fire duration in seconds (0.5)\n"
+    "  --chain-delay N   ticks a bomb hit by fire waits before it explodes (1, 0 = same tick)\n"
     "  --bombs N         initial bombs at once (1), --bombs-max N (6)\n"
     "  --power N         initial fire length (2), --power-max N (8)\n"
     "  --speed N         ticks per square (5), --speed-min N (3)\n"
@@ -197,6 +200,7 @@ std::string Config::usage(){
     "  --time S          round time limit in seconds (120, 0 = none)\n"
     "  --sudden-death S  seconds before the end when walls close in (30, 0 = off)\n"
     "  --sd-rate N       squares closed per second in sudden death (4)\n"
+    "  --sd-bomb N       bombs dropped from the sky per second in sudden death (0.5, 0 = off)\n"
     "  --soft PCT        soft block density in percent (60), --soft-2p PCT for 2 players (soft-10)\n"
     "  --item PCT        chance that a soft block drops an item (35)\n"
     "  --item-fire N --item-bomb N --item-speed N   item ratio (45:35:20)\n"

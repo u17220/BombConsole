@@ -466,6 +466,7 @@ class Client:
         self.dirty = True
         self.quit = False
         self.show_threat = opts["threat"]
+        self.frozen = None          # the state when the round was decided: the map stops there
         self.host = None            # Host when --host
 
     # ---- messages from the server ----
@@ -487,12 +488,16 @@ class Client:
         elif t == "start":
             self.start = m
             self.state = None
+            self.frozen = None
             self.result = None
             self.names = {p["id"]: p["name"] for p in m["players"]}
             self.screen = "game"
             self.msg = ""
         elif t == "state":
-            self.state = m
+            if self.frozen is None:
+                self.state = m
+                if len(m["players"]) >= 2 and sum(1 for p in m["players"] if p["st"] == "alive") <= 1:
+                    self.frozen = m     # decided: keep this map for the result screen
             if self.screen == "lobby":
                 self.screen = "game"    # joined during a round: spectate
         elif t == "result":
@@ -657,7 +662,46 @@ class Client:
         put(scr, 0, 0, hud[:cols - 1], attr(C_HUD, curses.A_BOLD))
         if st.get("sd"):
             put(scr, 0, hud.index("SUDDEN"), "SUDDEN DEATH", attr(C_FIRE, curses.A_BOLD | curses.A_BLINK))
-        # map
+        self.draw_map(st, show_dying=bool(self.frozen))
+        # legend (bottom)
+        row = 1 + self.start["h"]
+        x = 0
+        for p in st["players"]:
+            n = self.names.get(p["id"], "?")[:8]
+            tag = "" if p["st"] == "alive" else " x"
+            if self.opts["ascii"]:
+                text = "%d:%s%s" % (p["id"] + 1, n, tag)
+            else:
+                text = "%s%s" % (n, tag)      # others are green, mine is white and reversed
+            if x + len(text) >= cols:
+                row += 1
+                x = 0
+            mine = p["id"] == self.me
+            a = attr(C_ME if mine else C_PLAYER, curses.A_REVERSE if mine else 0)
+            if p["st"] != "alive":
+                a = attr(C_DYING)
+            put(scr, row, x, text, a)
+            x += len(text) + 2
+        # items, in their real colours
+        row += 1
+        x = 0
+        for key, label in (ITEM_NAMES_ASCII if self.opts["ascii"] else ITEM_NAMES_WIDE):
+            glyph = self.glyph[key]
+            put(scr, row, x, glyph, attr(C_ITEMS[key]))
+            x += dispw(glyph)
+            put(scr, row, x, "=" + label, 0)
+            x += dispw("=" + label) + 2
+        if self.frozen:
+            put(scr, row + 1, 0, "ROUND OVER", attr(C_HUD, curses.A_BOLD))
+        elif me and me["st"] != "alive":
+            put(scr, row + 1, 0, "YOU DIED - watching the rest. q: quit", attr(C_FIRE, curses.A_BOLD))
+        elif self.msg:
+            put(scr, row + 1, 0, self.msg, attr(C_FIRE))
+        else:
+            put(scr, row + 1, 0, "move: arrows/wasd  bomb: space  q: quit"[:cols - 1])
+
+    def draw_map(self, st, show_dying=False):
+        scr = self.scr
         g = self.glyph
         threat = st.get("threat") if self.show_threat else None
         soon = set()
@@ -702,58 +746,26 @@ class Client:
                         a = attr(pair, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
                     else:
                         text = "自" if pid == self.me else "敵"
-                        a = attr(pair, curses.A_BOLD)
+                        a = attr(pair, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
                 elif danger:
                     a = attr(C_THREAT)
                     text = "." if self.opts["ascii"] else "・"
                 put(scr, 1 + y, x * self.cell_w, text, a)
         for fy, fx, ftext, fa in fuses:
             put(scr, fy, fx, ftext, fa)
-        # legend (bottom)
-        row = 1 + self.start["h"]
-        x = 0
-        for p in st["players"]:
-            n = self.names.get(p["id"], "?")[:8]
-            tag = "" if p["st"] == "alive" else " x"
-            if self.opts["ascii"]:
-                text = "%d:%s%s" % (p["id"] + 1, n, tag)
-            else:
-                text = "%s%s" % (n, tag)      # others are green, mine is white and reversed
-            if x + len(text) >= cols:
-                row += 1
-                x = 0
-            mine = p["id"] == self.me
-            a = attr(C_ME if mine else C_PLAYER, curses.A_REVERSE if mine else 0)
-            if p["st"] != "alive":
-                a = attr(C_DYING)
-            put(scr, row, x, text, a)
-            x += len(text) + 2
-        # items, in their real colours
-        row += 1
-        x = 0
-        for key, label in (ITEM_NAMES_ASCII if self.opts["ascii"] else ITEM_NAMES_WIDE):
-            glyph = self.glyph[key]
-            put(scr, row, x, glyph, attr(C_ITEMS[key]))
-            x += dispw(glyph)
-            put(scr, row, x, "=" + label, 0)
-            x += dispw("=" + label) + 2
-        if me and me["st"] != "alive":
-            put(scr, row + 1, 0, "YOU DIED - watching the rest. q: quit", attr(C_FIRE, curses.A_BOLD))
-        elif self.msg:
-            put(scr, row + 1, 0, self.msg, attr(C_FIRE))
-        else:
-            put(scr, row + 1, 0, "move: arrows/wasd  bomb: space  q: quit"[:cols - 1])
+        if show_dying:
+            # the map has fire over a player who died in it: write the death mark back on the square
+            for p in st["players"]:
+                if p["st"] == "dying":
+                    put(scr, 1 + p["y"], p["x"] * self.cell_w, g["x"], attr(C_DYING))
 
-    def draw_result(self):
-        scr = self.scr
+    def result_lines(self):
+        """The ranking block as (text, attr) lines."""
         r = self.result
-        if not r:
-            return
         title = "ROUND %d/%d RESULT" % (r["round"], r["rounds"])
         if r.get("timeout"):
             title += "  (time up)"
-        put(scr, 0, 0, title, attr(C_HUD, curses.A_BOLD))
-        row = 2
+        lines = [(title, attr(C_HUD, curses.A_BOLD)), ("", 0)]
         for p in r["ranking"]:
             cause = p["cause"]
             if cause == "alive":
@@ -764,6 +776,8 @@ class Client:
                 why = "own bomb"
             elif cause == "suddendeath":
                 why = "crushed (sudden death)"
+            elif cause == "skybomb":
+                why = "bombed (sudden death)"
             elif cause == "disconnect":
                 why = "disconnected"
             else:
@@ -772,21 +786,42 @@ class Client:
             if r["rounds"] > 1:
                 line += "  score %d" % p.get("score", 0)
             me = p["id"] == self.me
-            put(scr, row, 0, line, attr(C_ME if me else C_PLAYER, curses.A_REVERSE if me else 0))
-            row += 1
+            lines.append((line, attr(C_ME if me else C_PLAYER, curses.A_REVERSE if me else 0)))
         if self.end and "score" in self.end and self.end.get("rounds", 1) > 1:
-            row += 1
-            put(scr, row, 0, "SESSION TOTAL", attr(C_HUD, curses.A_BOLD))
-            row += 1
+            lines.append(("", 0))
+            lines.append(("SESSION TOTAL", attr(C_HUD, curses.A_BOLD)))
             for p in sorted(self.end["score"], key=lambda p: (-p["score"], -p["kills"])):
-                put(scr, row, 0, "   %-16s %d win(s)  %d kill(s)" % (p["name"][:16], p["score"], p["kills"]))
-                row += 1
-        row += 1
-        put(scr, row, 0, "r: play again   q: quit   (any other key: back to the lobby)", attr(C_HUD, curses.A_BOLD))
+                lines.append(("   %-16s %d win(s)  %d kill(s)" % (p["name"][:16], p["score"], p["kills"]), 0))
+        lines.append(("", 0))
+        lines.append(("r: play again   q: quit   (any other key: back to the lobby)", attr(C_HUD, curses.A_BOLD)))
         if self.lobby:
             waiting = [p["name"][:8] for p in self.lobby["players"] if p["ready"]]
             if waiting:
-                put(scr, row + 1, 0, "ready for the next round: " + ", ".join(waiting))
+                lines.append(("ready for the next round: " + ", ".join(waiting), 0))
+        return lines
+
+    def draw_result(self):
+        scr = self.scr
+        if not self.result:
+            return
+        lines = self.result_lines()
+        rows, cols = scr.getmaxyx()
+        st = self.frozen or self.state
+        x0, y0, first = 0, 0, 0
+        if st and self.start:
+            mw, mh = self.start["w"] * self.cell_w, self.start["h"]
+            if cols >= mw and rows >= 1 + mh:
+                # the map stays as it was when the round was decided; the ranking goes under it
+                # (the title on the row above it), or beside it when there is no room below
+                if rows >= 1 + mh + len(lines) - 1:
+                    self.draw_map(st, show_dying=True)
+                    put(scr, 0, 0, *lines[0])
+                    x0, y0, first = 0, 1 + mh, 1
+                elif cols >= mw + 2 + max(dispw(t) for t, _ in lines):
+                    self.draw_map(st, show_dying=True)
+                    x0 = mw + 2
+        for i, (text, a) in enumerate(lines[first:]):
+            put(scr, y0 + i, x0, text, a)
 
     # ---- main loop ----
 
