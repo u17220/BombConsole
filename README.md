@@ -1,5 +1,7 @@
 # BombConsole
 
+![BombConsole のプレイ画面](docs/img/BombConsolePlay.gif)
+
 ターミナルで遊ぶ、多人数対戦のボンバーマン風ゲーム。
 
 ## 起動方法
@@ -69,6 +71,7 @@ python A_client.py 192.168.x.y
 - 表示は ASCII になる(自分は番号、`#` 壁、`+` 岩、`o` ボム)。全角(`壁` `岩` `爆` など)で遊ぶなら B。
 - ホストのアドレスを指定して起動する(同じ LAN の自動発見は Windows で確認していない)。
 - サーバを立てる(`--host`)のは、この方法では想定していない。ホスト役は Mac / Linux か B。
+- ここで足りない画面確認用に、サーバなしで全種類のマスを出す `python A_client.py --demo` もある(スクリーンショット用)。
 
 **B. WSL で動かす(全角の見た目で遊べる)**
 
@@ -79,8 +82,8 @@ curl -O https://raw.githubusercontent.com/u17220/BombConsole/master/client/A_cli
 python3 A_client.py 192.168.x.y
 ```
 
-- Ubuntu の WSL で、参加するだけならこれで動くことを確認した(`windows-curses` は不要)。
-- サーバを立てるなら WSL の中で `git` `g++` `make` を入れて「サーバを立てる」の手順にする(WSL 内でのビルドとホストは未確認。WSL は既定で LAN の外から直接届かないことがあるので、他の人を迎えるホスト役は Mac / Linux が無難)。
+- Ubuntu の WSL で動くことを確認した(`windows-curses` は不要)。
+- サーバを立てるなら WSL の中で `git` `g++` `make` を入れて「サーバを立てる」の手順にする(WSL 内でのビルドとホストも動くことを確認した)。ただし WSL は既定で LAN の外から直接届かないことがあるので、他の人を迎えるホスト役は Mac / Linux が無難。
 
 ## 遊び方
 

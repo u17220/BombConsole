@@ -24,6 +24,8 @@ usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii] [--bots N]
   --        everything after it goes to the server, e.g. -- --seed 3
   --name    player name (default: $BOMBCONSOLE_NAME, then the login user name)
   --ascii   draw with ASCII characters only (2 columns per square)
+  --demo    no server: show one still screen with every kind of square, for screenshots
+            (any key quits; --ascii and --threat work too)
   --threat  start with the danger highlight on (squares the current bombs will reach;
             t toggles it during the round)
 
@@ -80,7 +82,7 @@ def warn_unreachable_sudden_death(server_args):
 
 def parse_args(argv):
     opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False, "threat": False,
-            "hosting": False, "players": None, "bots": 0, "server_args": []}
+            "hosting": False, "players": None, "bots": 0, "server_args": [], "demo": False}
     rules = []      # --rounds / --time / ... given to the client, handed to the server with --host
     env = os.environ.get("BOMBCONSOLE_SERVER")
     if env:
@@ -105,6 +107,8 @@ def parse_args(argv):
             opts["threat"] = True
         elif a == "--no-threat":
             opts["threat"] = False
+        elif a == "--demo":
+            opts["demo"] = True
         elif a == "--host":
             opts["hosting"] = True
         elif a == "--bots" and i + 1 < len(argv):
@@ -936,6 +940,65 @@ class Client:
         self.conn.send("BYE")
 
 
+def demo_scene():
+    """A made-up round (start, state) with every kind of square on the map, for screenshots."""
+    w, h = 13, 11
+    grid = [[" "] * w for _ in range(h)]
+    for y in range(h):
+        for x in range(w):
+            if x in (0, w - 1) or y in (0, h - 1) or (x % 2 == 0 and y % 2 == 0):
+                grid[y][x] = "#"
+            elif (x * 7 + y * 3) % 5 < 3:
+                grid[y][x] = "+"
+    put_at = {
+        # players: 1 = me (standing on a bomb), 2 and 3 alive, 4 dying
+        (1, 1): " ", (2, 1): " ", (1, 2): " ", (11, 1): "2", (10, 1): " ", (11, 2): " ",
+        (11, 9): "3", (10, 9): " ", (11, 8): " ", (11, 5): "x",
+        # bombs: one on me, one burning slowly, one about to go off, a chain next to it
+        (1, 3): "1", (3, 1): "o", (5, 5): "o", (9, 3): "o", (9, 4): " ",
+        # fire (a cross) and items
+        (7, 7): "*", (6, 7): "*", (8, 7): "*", (7, 6): "*", (7, 8): "*", (5, 7): "*",
+        (3, 3): "F", (9, 9): "B", (5, 9): "S", (3, 5): "F", (7, 1): "S", (9, 5): "B",
+        # walls that have closed in (sudden death)
+        (1, 9): "#", (2, 9): "#", (3, 9): "#", (1, 8): "#", (1, 7): "#",
+    }
+    for (x, y), ch in put_at.items():
+        grid[y][x] = ch
+    start = {"w": w, "h": h, "players": [{"id": i, "name": n} for i, n in enumerate(("you", "bot1", "bot2", "bot3"))]}
+    state = {
+        "t": "state", "tick": 0, "left": 41, "sd": True, "map": ["".join(r) for r in grid],
+        "players": [
+            {"id": 0, "x": 1, "y": 3, "st": "alive", "bombs": 0, "maxb": 2, "fire": 3, "spd": 1},
+            {"id": 1, "x": 11, "y": 1, "st": "alive", "bombs": 1, "maxb": 1, "fire": 2, "spd": 1},
+            {"id": 2, "x": 11, "y": 9, "st": "alive", "bombs": 1, "maxb": 1, "fire": 2, "spd": 1},
+            {"id": 3, "x": 11, "y": 5, "st": "dying", "bombs": 0, "maxb": 1, "fire": 2, "spd": 1},
+        ],
+        "bombs": [{"x": 1, "y": 3, "fuse": 1.8, "owner": 0}, {"x": 3, "y": 1, "fuse": 2.2, "owner": 0},
+                  {"x": 5, "y": 5, "fuse": 0.6, "owner": 1}, {"x": 9, "y": 3, "fuse": 1.4, "owner": -1}],
+    }
+    return start, state
+
+
+def run_demo(opts):
+    def wrapped(scr):
+        scr.keypad(True)
+        curses.curs_set(0)
+        init_colors()
+        client = Client(scr, None, opts)
+        client.me = 0
+        client.my_name = "you"
+        client.start, client.state = demo_scene()
+        client.names = {p["id"]: p["name"] for p in client.start["players"]}
+        client.screen = "game"
+        client.msg = "demo screen (any key quits)"
+        while True:
+            client.draw()
+            c = scr.getch()
+            if c != curses.KEY_RESIZE:
+                break
+    curses.wrapper(wrapped)
+
+
 def main():
     opts = parse_args(sys.argv)
     locale.setlocale(locale.LC_ALL, "")
@@ -943,6 +1006,9 @@ def main():
         enc = (locale.getpreferredencoding(False) or "").lower()
         if "utf" not in enc:
             opts["ascii"] = True
+    if opts["demo"]:
+        run_demo(opts)
+        return
     host = opts["host"]
     hosting = Host() if opts["hosting"] or opts["bots"] > 0 else None
     if opts["hosting"]:
