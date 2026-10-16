@@ -463,8 +463,9 @@ void Game::tick(){
         if(p.st == GamePlayer::St::DYING && ticks >= p.dying_until)
             p.st = GamePlayer::St::DEAD;
 
-    // 5. time limit
-    if(limit_ticks > 0){
+    // 5. time limit. With sudden death the walls close until somebody is the last one standing,
+    // so the limit only decides when they start; without it the round ends in a draw
+    if(limit_ticks > 0 && sd_start_tick <= 0){
         if(ticks >= limit_ticks && !timeout && over_tick < 0){
             timeout = true;
             over_tick = ticks + dying_ticks;
