@@ -200,6 +200,7 @@ class Bot:
                     if p["id"] == self.me and not p["ready"]:
                         s.sendall(b"READY 1\n")
             elif t == "start":
+                last_tick_sent = -1     # ticks count from 0 again in every round
                 if not o["quiet"]:
                     print("round %d: %dx%d" % (m["round"], m["w"], m["h"]), file=sys.stderr)
             elif t == "state":
