@@ -389,6 +389,7 @@ C_PLAYER_THREAT = 20    # + player id, on a threatened square
 C_ME = 18               # myself (white, reversed on the map)
 C_ME_THREAT = 28
 C_ME_BOMB, C_ME_BOMB_SOON, C_PLAYER_BOMB, C_PLAYER_BOMB_SOON = range(35, 39)    # standing on a bomb
+C_ME_OVERLAP = 39       # on the same square as another player: green background, the enemy's colour
 
 
 def init_colors():
@@ -427,6 +428,7 @@ def init_colors():
     curses.init_pair(C_ME_BOMB_SOON, curses.COLOR_WHITE, curses.COLOR_RED)
     curses.init_pair(C_PLAYER_BOMB, curses.COLOR_GREEN, curses.COLOR_BLUE)
     curses.init_pair(C_PLAYER_BOMB_SOON, curses.COLOR_GREEN, curses.COLOR_RED)
+    curses.init_pair(C_ME_OVERLAP, curses.COLOR_WHITE, curses.COLOR_GREEN)
 
 
 def attr(pair, extra=0):
@@ -770,6 +772,16 @@ class Client:
                     a = attr(C_THREAT)
                     text = "." if self.opts["ascii"] else "・"
                 put(scr, 1 + y, x * self.cell_w, text, a)
+        # the map has one letter per square, so a player on my square hides me: draw me over it, on the
+        # enemy's colour
+        alive = [p for p in st["players"] if p["st"] == "alive"]
+        mine = [p for p in alive if p["id"] == self.me]
+        if mine and any(p["id"] != self.me and (p["x"], p["y"]) == (mine[0]["x"], mine[0]["y"]) for p in alive):
+            mx, my = mine[0]["x"], mine[0]["y"]
+            put(scr, 1 + my, mx * self.cell_w, "%d" % (self.me + 1) if self.opts["ascii"] else "自",
+                attr(C_ME_OVERLAP, curses.A_BOLD))
+            if (mx, my) in bomb_pos and not self.opts["ascii"]:
+                add_fuse(mx, my)
         for fy, fx, ftext, fa in fuses:
             put(scr, fy, fx, ftext, fa)
         if show_dying:
