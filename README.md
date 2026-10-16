@@ -14,6 +14,8 @@ python3 A_client.py 192.168.x.y      # 見つからなければホストのア�
 
 インストールは不要。`A_client.py` はホストから受け取ってもよい。ホストがまだいなければ、下の「サーバを立てる」で自分が立てる。
 
+> **Windows の人は、下の「[Windows の場合](#windows-の場合)」の手順で。** そのままでは `curl` も `python3` も動かない。
+
 ### サーバを立てる(ホスト役)
 
 `git`、`g++`、`make`、Python 3 が必要(Linux は `libncurses` の開発パッケージがあれば観戦画面付き。なくても動く)。
@@ -39,7 +41,38 @@ python3 client/A_client.py --host --bots 2      # 自分 + ボット 2 体。そ
 ### 動作環境
 
 - 端末は UTF-8 で全角文字が出るもの。表示が崩れるときは `--ascii` を付ける。
-- Windows: ネイティブの Python には `curses` がないので、`pip install windows-curses` を入れる。表示は ASCII(`o` `+` など)になる。全角の見た目(`爆` `岩` など)で遊ぶなら WSL(`wsl --install`)の中で動かす。
+- Windows は下の「Windows の場合」を見る。
+
+### Windows の場合
+
+**A. そのまま動かす(参加するだけ。表示は ASCII)**
+
+Python 3 を入れた PowerShell で:
+
+```powershell
+pip install windows-curses
+curl.exe -O https://raw.githubusercontent.com/u17220/BombConsole/master/client/A_client.py
+python A_client.py 192.168.x.y
+```
+
+- `curl` ではなく **`curl.exe`**(PowerShell の `curl` は別のコマンドの別名で、`-O` が通らない)。
+- `python3` ではなく **`python`**。
+- Windows の Python には `curses` がないので、`windows-curses` が要る(最初の 1 回だけ)。
+- 表示は ASCII になる(自分は番号、`#` 壁、`+` 岩、`o` ボム)。全角(`壁` `岩` `爆` など)で遊ぶなら B。
+- ホストのアドレスを指定して起動する(同じ LAN の自動発見は Windows で確認していない)。
+- サーバを立てる(`--host`)のは、この方法では想定していない。ホスト役は Mac / Linux か B。
+
+**B. WSL で動かす(全角の見た目で遊べる)**
+
+管理者の PowerShell で `wsl --install` を実行して再起動し、Ubuntu を開く。その中で、Linux と同じ手順:
+
+```bash
+curl -O https://raw.githubusercontent.com/u17220/BombConsole/master/client/A_client.py
+python3 A_client.py 192.168.x.y
+```
+
+- Ubuntu の WSL で、参加するだけならこれで動くことを確認した(`windows-curses` は不要)。
+- サーバを立てるなら WSL の中で `git` `g++` `make` を入れて「サーバを立てる」の手順にする(WSL 内でのビルドとホストは未確認。WSL は既定で LAN の外から直接届かないことがあるので、他の人を迎えるホスト役は Mac / Linux が無難)。
 
 ## 遊び方
 
