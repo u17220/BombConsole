@@ -35,6 +35,7 @@ struct Config{
     double dying = 1.0;             // seconds of the death animation
     double time_limit = 120;        // seconds, 0 = none
     double sudden_death = 30;       // seconds before the end when the walls start closing (0 = off)
+    double sd_start = -1;           // seconds after the round starts when the walls start closing (-1 = use sudden_death; works with time 0)
     double sd_rate = 4;             // squares closed per second
     double sd_bomb = 0.5;           // bombs dropped from the sky per second during sudden death (0 = off)
     int soft_pct = 60;              // % of free squares filled with soft blocks (3+ players)

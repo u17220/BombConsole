@@ -16,7 +16,9 @@ usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii] [--bots N]
   --rounds N  rounds per session (--host only; the rule options below too)
   --time S    round length in seconds (120, 0 = no limit)
   --sudden-death S  seconds before the end when walls close in (30, 0 = off).
-            Counted back from the end, so with --time 0 it never starts
+            Counted back from the end, so with --time 0 it never starts (use --sd-start)
+  --sd-start S  seconds after the round starts when walls close in. Overrides
+            --sudden-death and works with --time 0
   --sd-rate N  squares closed per second in sudden death (4)
   --sd-bomb N  bombs dropped from the sky per second in sudden death (0.5, 0 = off)
   --        everything after it goes to the server, e.g. -- --seed 3
@@ -56,7 +58,7 @@ DOUBLE_Q_SEC = 1.0      # press q twice within this time to quit during a round
 # ---------------------------------------------------------------- arguments
 
 
-RULE_OPTIONS = ("--rounds", "--time", "--sudden-death", "--sd-rate", "--sd-bomb")
+RULE_OPTIONS = ("--rounds", "--time", "--sudden-death", "--sd-start", "--sd-rate", "--sd-bomb")
 
 
 def warn_unreachable_sudden_death(server_args):
@@ -64,14 +66,14 @@ def warn_unreachable_sudden_death(server_args):
     last = {}
     for k, a in enumerate(server_args):
         key, eq, v = a.partition("=")
-        if key in ("--time", "--sudden-death", "--sd-rate", "--sd-bomb"):
+        if key in RULE_OPTIONS[1:]:
             if not eq and k + 1 < len(server_args):
                 v = server_args[k + 1]
             last[key] = v
     try:
-        if float(last.get("--time", 120)) == 0 and any(k != "--time" for k in last):
+        if float(last.get("--time", 120)) == 0 and "--sd-start" not in last and any(k != "--time" for k in last):
             print("warning: --time 0 means no time limit, so sudden death never starts "
-                  "(it counts back from the end of the round)", file=sys.stderr)
+                  "(it counts back from the end of the round; use --sd-start S to start it S seconds in)", file=sys.stderr)
     except ValueError:
         pass
 

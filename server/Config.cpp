@@ -62,6 +62,7 @@ bool Config::set(const std::string &key, const std::string &value, std::string &
     else if(key == "dying") ok = toDouble(value, dying);
     else if(key == "time") ok = toDouble(value, time_limit);
     else if(key == "sudden-death" || key == "sudden_death") ok = toDouble(value, sudden_death);
+    else if(key == "sd-start" || key == "sd_start") ok = toDouble(value, sd_start);
     else if(key == "sd-rate" || key == "sd_rate") ok = toDouble(value, sd_rate);
     else if(key == "sd-bomb" || key == "sd_bomb") ok = toDouble(value, sd_bomb);
     else if(key == "soft") ok = toInt(value, soft_pct);
@@ -199,6 +200,8 @@ std::string Config::usage(){
     "  --dying S         death animation in seconds (1.0)\n"
     "  --time S          round time limit in seconds (120, 0 = none)\n"
     "  --sudden-death S  seconds before the end when walls close in (30, 0 = off)\n"
+    "  --sd-start S      seconds after the round starts when walls close in (off). Overrides --sudden-death\n"
+    "                    and works with --time 0, so a round without a limit can still end\n"
     "  --sd-rate N       squares closed per second in sudden death (4)\n"
     "  --sd-bomb N       bombs dropped from the sky per second in sudden death (0.5, 0 = off)\n"
     "  --soft PCT        soft block density in percent (60), --soft-2p PCT for 2 players (soft-10)\n"
