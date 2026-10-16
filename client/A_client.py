@@ -551,7 +551,7 @@ class Client:
                 self.quit = True
             return
         if self.screen == "lobby":
-            if c in (ord("r"), ord("R"), ord(" ")):
+            if c in (ord("r"), ord("R")):       # not Space: it is the bomb key, so held down after a round it started the next one
                 self.toggle_ready()
             elif c in (ord("g"), ord("G")) and self.host:
                 n = len(self.lobby["players"]) if self.lobby else 0
