@@ -430,10 +430,8 @@ void Game::tick(){
     }
 
     // 3. sudden death closes one square, then items, fire and walls
-    if(limit_ticks > 0){
-        advanceSuddenDeath();
-        dropSkyBomb();
-    }
+    advanceSuddenDeath();
+    dropSkyBomb();
     for(GamePlayer &p : ps){
         if(!p.alive())
             continue;
