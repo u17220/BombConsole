@@ -66,7 +66,7 @@ fuse = 2.5
 |---|---|
 | `host[:port]` | 接続先。省略時は LAN 自動発見(UDP ブロードキャスト、ポート 10001)。環境変数 `BOMBCONSOLE_SERVER=host:port` でも可 |
 | `--host` | サーバ(`server/A_server --no-ui`)を子プロセスで起動して 127.0.0.1 に接続。サーバの出力はリポジトリ直下の `.bombconsole-server.log` |
-| `--players N` / `--bots N` | 人間の数(自分を含む、`--host` 時のみ)/ 連れていくボットの数。`--host` はサーバに `--autostart (players + bots)` を渡す(合計 2 未満なら渡さない)。autostart は最初のラウンドだけで、2 戦目からは全員の `r` で始まる |
+| `--players N` / `--bots N` | 人間の数(自分を含む、`--host` 時のみ)/ 連れていくボットの数。`--players` を付けたときだけ、`--host` はサーバに `--autostart (players + bots)` を渡す(合計 2 未満なら渡さない)。付けなければ全員の `r` を待つ(既定)。autostart は最初のラウンドだけで、2 戦目からは全員の `r` で始まる |
 | `-- ...` | 以降はサーバの引数(`--port` があればその値に接続) |
 | `--name 名前` | 名前(既定: 環境変数 `BOMBCONSOLE_NAME` > ログインユーザー名)。同名はサーバが `(2)` を付ける |
 | `--ascii` | ASCII 文字だけで描く(1 マス 2 桁)。既定は全角(1 マス 3 桁) |
