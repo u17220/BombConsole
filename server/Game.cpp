@@ -10,8 +10,10 @@ Game::Game(const Config &cfg_, unsigned seed) : cfg(cfg_), rng(seed){
     fire_ticks = std::max(1, (int)lround(cfg.fire * 1000.0 / cfg.tick_ms));
     dying_ticks = std::max(1, (int)lround(cfg.dying * 1000.0 / cfg.tick_ms));
     limit_ticks = cfg.time_limit > 0 ? (int)lround(cfg.time_limit * 1000.0 / cfg.tick_ms) : 0;
-    if(limit_ticks > 0 && cfg.sudden_death > 0 && cfg.sd_rate > 0){
-        sd_start_tick = std::max(1, limit_ticks - (int)lround(cfg.sudden_death * 1000.0 / cfg.tick_ms));
+    bool from_start = cfg.sd_start >= 0;        // --sd-start counts from the start and needs no time limit
+    if((from_start || (limit_ticks > 0 && cfg.sudden_death > 0)) && cfg.sd_rate > 0){
+        sd_start_tick = from_start ? std::max(1, (int)lround(cfg.sd_start * 1000.0 / cfg.tick_ms))
+                                   : std::max(1, limit_ticks - (int)lround(cfg.sudden_death * 1000.0 / cfg.tick_ms));
         sd_interval = std::max(1, (int)lround(1000.0 / cfg.tick_ms / cfg.sd_rate));
         if(cfg.sd_bomb > 0)
             sd_bomb_interval = std::max(1, (int)lround(1000.0 / cfg.tick_ms / cfg.sd_bomb));
@@ -428,10 +430,8 @@ void Game::tick(){
     }
 
     // 3. sudden death closes one square, then items, fire and walls
-    if(limit_ticks > 0){
-        advanceSuddenDeath();
-        dropSkyBomb();
-    }
+    advanceSuddenDeath();
+    dropSkyBomb();
     for(GamePlayer &p : ps){
         if(!p.alive())
             continue;
@@ -463,8 +463,9 @@ void Game::tick(){
         if(p.st == GamePlayer::St::DYING && ticks >= p.dying_until)
             p.st = GamePlayer::St::DEAD;
 
-    // 5. time limit
-    if(limit_ticks > 0){
+    // 5. time limit. With sudden death the walls close until somebody is the last one standing,
+    // so the limit only decides when they start; without it the round ends in a draw
+    if(limit_ticks > 0 && sd_start_tick <= 0){
         if(ticks >= limit_ticks && !timeout && over_tick < 0){
             timeout = true;
             over_tick = ticks + dying_ticks;
