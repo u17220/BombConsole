@@ -388,6 +388,8 @@ C_PLAYER = 10   # + player id (0..7); all the same colour (v1 look: every enemy 
 C_PLAYER_THREAT = 20    # + player id, on a threatened square
 C_ME = 18               # myself (white, reversed on the map)
 C_ME_THREAT = 28
+C_ME_BOMB, C_ME_BOMB_SOON, C_PLAYER_BOMB, C_PLAYER_BOMB_SOON = range(35, 39)    # standing on a bomb
+C_ME_OVERLAP = 39       # on the same square as another player: green background, the enemy's colour
 
 
 def init_colors():
@@ -422,6 +424,11 @@ def init_colors():
         curses.init_pair(C_PLAYER_THREAT + i, curses.COLOR_GREEN, curses.COLOR_RED)
     curses.init_pair(C_ME, curses.COLOR_WHITE, bg)
     curses.init_pair(C_ME_THREAT, curses.COLOR_WHITE, curses.COLOR_RED)
+    curses.init_pair(C_ME_BOMB, curses.COLOR_WHITE, curses.COLOR_BLUE)
+    curses.init_pair(C_ME_BOMB_SOON, curses.COLOR_WHITE, curses.COLOR_RED)
+    curses.init_pair(C_PLAYER_BOMB, curses.COLOR_GREEN, curses.COLOR_BLUE)
+    curses.init_pair(C_PLAYER_BOMB_SOON, curses.COLOR_GREEN, curses.COLOR_RED)
+    curses.init_pair(C_ME_OVERLAP, curses.COLOR_WHITE, curses.COLOR_GREEN)
 
 
 def attr(pair, extra=0):
@@ -710,6 +717,13 @@ class Client:
                 soon.add((b["x"], b["y"]))
         fuse_ch = FUSE_FRAMES[(st.get("tick", 0) // 4) % len(FUSE_FRAMES)]
         fuses = []      # (y, x, text, attr) drawn after the square
+        bomb_pos = set((b["x"], b["y"]) for b in st.get("bombs", []))
+
+        def add_fuse(x, y):
+            # v1 look: 爆 (blue) + fuse * (yellow); the fuse turns red bold under 1 s
+            fa = attr(C_FUSE_SOON, curses.A_BOLD) if (x, y) in soon else attr(C_FUSE)
+            fuses.append((1 + y, x * self.cell_w + 2, fuse_ch, fa))
+
         for y, line in enumerate(st["map"]):
             trow = threat[y] if threat and y < len(threat) else None
             for x, ch in enumerate(line):
@@ -723,11 +737,7 @@ class Client:
                 elif ch == "o":
                     a = attr(C_BOMB, curses.A_BOLD)
                     if not self.opts["ascii"]:
-                        # v1 look: 爆 (blue) + fuse * (yellow); the fuse turns red bold under 1 s
-                        if (x, y) in soon:
-                            fuses.append((1 + y, x * self.cell_w + 2, fuse_ch, attr(C_FUSE_SOON, curses.A_BOLD)))
-                        else:
-                            fuses.append((1 + y, x * self.cell_w + 2, fuse_ch, attr(C_FUSE)))
+                        add_fuse(x, y)
                     elif (x, y) in soon:
                         a = attr(C_BOMB_SOON, curses.A_BOLD)
                 elif ch == "*":
@@ -742,15 +752,36 @@ class Client:
                         pair = C_ME_THREAT if danger else C_ME
                     else:
                         pair = (C_PLAYER_THREAT if danger else C_PLAYER) + pid % 8
+                    rev = curses.A_REVERSE if pid == self.me else 0
+                    if (x, y) in bomb_pos:
+                        # the player hides the bomb under it: show it as a blue background (red when about to go off)
+                        soon_here = (x, y) in soon
+                        if pid == self.me:
+                            pair = C_ME_BOMB_SOON if soon_here else C_ME_BOMB
+                        else:
+                            pair = C_PLAYER_BOMB_SOON if soon_here else C_PLAYER_BOMB
+                        rev = 0
+                        if not self.opts["ascii"]:
+                            add_fuse(x, y)
                     if self.opts["ascii"]:
-                        a = attr(pair, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
+                        a = attr(pair, curses.A_BOLD | rev)
                     else:
                         text = "自" if pid == self.me else "敵"
-                        a = attr(pair, curses.A_BOLD | (curses.A_REVERSE if pid == self.me else 0))
+                        a = attr(pair, curses.A_BOLD | rev)
                 elif danger:
                     a = attr(C_THREAT)
                     text = "." if self.opts["ascii"] else "・"
                 put(scr, 1 + y, x * self.cell_w, text, a)
+        # the map has one letter per square, so a player on my square hides me: draw me over it, on the
+        # enemy's colour
+        alive = [p for p in st["players"] if p["st"] == "alive"]
+        mine = [p for p in alive if p["id"] == self.me]
+        if mine and any(p["id"] != self.me and (p["x"], p["y"]) == (mine[0]["x"], mine[0]["y"]) for p in alive):
+            mx, my = mine[0]["x"], mine[0]["y"]
+            put(scr, 1 + my, mx * self.cell_w, "%d" % (self.me + 1) if self.opts["ascii"] else "自",
+                attr(C_ME_OVERLAP, curses.A_BOLD))
+            if (mx, my) in bomb_pos and not self.opts["ascii"]:
+                add_fuse(mx, my)
         for fy, fx, ftext, fa in fuses:
             put(scr, fy, fx, ftext, fa)
         if show_dying:
