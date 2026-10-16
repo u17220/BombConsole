@@ -24,8 +24,8 @@ python3 A_client.py 192.168.x.y      # 見つからなければホストのア�
 git clone https://github.com/u17220/BombConsole.git
 cd BombConsole
 make
-python3 client/A_client.py --host --players 3 --bots 1   # 人間 3 + ボット 1 = 4 人そろったら自動開始
-python3 client/A_client.py --host                        # 人数を決めない。全員が r を押したら開始(g で強制開始)
+python3 client/A_client.py --host --bots 1               # 全員が r を押したら 5 秒後に開始(g で強制開始)
+python3 client/A_client.py --host --players 3 --bots 1   # 人間 3 + ボット 1 = 4 人そろったら、r を待たずに自動開始
 ```
 
 画面に「others join with: python3 A_client.py 192.168.x.y」と出るので、参加者に伝える。`--host` がサーバを裏で起動し、`q` で抜けるとサーバもボットも止まる。
@@ -33,7 +33,7 @@ python3 client/A_client.py --host                        # 人数を決めない
 ### 1 人で試す
 
 ```bash
-python3 client/A_client.py --host --bots 2      # 自分 + ボット 2 体。そろった時点で自動開始
+python3 client/A_client.py --host --bots 2      # 自分 + ボット 2 体。`r` を押すと 5 秒後に開始(ボットは準備済み)
 ```
 
 (上の `make` まで済ませておく)

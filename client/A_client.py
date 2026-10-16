@@ -10,9 +10,9 @@ usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii] [--bots N]
   --host    start a server (server/A_server --no-ui) as a child process and join it.
             Needs the repository (builds the server with make if necessary)
   --bots N  also start N bots (client/bot.py) and bring them to the same server
-  --players N  humans expected including you (--host only, default 1). The server
-            starts automatically when players + bots have joined; if that is below 2,
-            the round starts with r as usual
+  --players N  humans expected including you (--host only). Without it the round starts
+            when everyone presses r; with it the server starts the first round by itself
+            as soon as players + bots have joined
   --        everything after it goes to the server, e.g. -- --time 90 --seed 3
   --name    player name (default: $BOMBCONSOLE_NAME, then the login user name)
   --ascii   draw with ASCII characters only (2 columns per square)
@@ -111,6 +111,7 @@ def parse_args(argv):
     if opts["server_args"] and not opts["hosting"]:
         print("warning: server options after -- only matter with --host; ignored", file=sys.stderr)
         opts["server_args"] = []
+    opts["auto"] = opts["hosting"] and opts["players"] is not None     # only --players asks for an automatic start
     if opts["hosting"]:
         if opts["players"] is None:
             opts["players"] = 1
@@ -900,7 +901,7 @@ def main():
     hosting = Host() if opts["hosting"] or opts["bots"] > 0 else None
     if opts["hosting"]:
         total = opts["players"] + opts["bots"]
-        hosting.start_server(opts["port"], opts["server_args"], total if total >= 2 else 0)
+        hosting.start_server(opts["port"], opts["server_args"], total if opts["auto"] and total >= 2 else 0)
         opts["port"] = hosting.port
     elif not host:
         try:
