@@ -28,6 +28,14 @@ python3 client/A_client.py --host --bots 1               # 全員が r を押し
 python3 client/A_client.py --host --players 3 --bots 1   # 人間 3 + ボット 1 = 4 人そろったら、r を待たずに自動開始
 ```
 
+ルールも変えられる(`--host` のときだけ有効)。
+
+```bash
+python3 client/A_client.py --host --bots 2 --time 90 --sudden-death 45 --sd-bomb 1
+```
+
+`--rounds`(ラウンド数)、`--time`(1 ラウンドの秒数、0 で無制限)、`--sudden-death`(終了の何秒前から壁が迫るか、0 で無し)、`--sd-rate`(1 秒に閉じるマス数)、`--sd-bomb`(1 秒に降る爆弾の数、0 で無し)。サドンデスは終了時刻から逆算するので、`--time 0` にすると始まらない。
+
 画面に「others join with: python3 A_client.py 192.168.x.y」と出るので、参加者に伝える。`--host` がサーバを裏で起動し、`q` で抜けるとサーバもボットも止まる。
 
 ### 1 人で試す

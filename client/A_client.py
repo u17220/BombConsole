@@ -13,7 +13,13 @@ usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii] [--bots N]
   --players N  humans expected including you (--host only). Without it the round starts
             when everyone presses r; with it the server starts the first round by itself
             as soon as players + bots have joined
-  --        everything after it goes to the server, e.g. -- --time 90 --seed 3
+  --rounds N  rounds per session (--host only; the rule options below too)
+  --time S    round length in seconds (120, 0 = no limit)
+  --sudden-death S  seconds before the end when walls close in (30, 0 = off).
+            Counted back from the end, so with --time 0 it never starts
+  --sd-rate N  squares closed per second in sudden death (4)
+  --sd-bomb N  bombs dropped from the sky per second in sudden death (0.5, 0 = off)
+  --        everything after it goes to the server, e.g. -- --seed 3
   --name    player name (default: $BOMBCONSOLE_NAME, then the login user name)
   --ascii   draw with ASCII characters only (2 columns per square)
   --threat  start with the danger highlight on (squares the current bombs will reach;
@@ -22,6 +28,7 @@ usage: python3 A_client.py [host[:port]] [--name NAME] [--ascii] [--bots N]
 examples:
   python3 A_client.py --host --bots 2              # play alone against 2 bots
   python3 A_client.py --host --players 3 --bots 1  # host for 3 humans + 1 bot
+  python3 A_client.py --host --bots 2 --time 90 --sudden-death 45 --sd-bomb 1
   python3 A_client.py                              # join a server on the LAN
 
 keys: arrows / WASD / hjkl = move, Space or z = bomb, r = ready, q = quit,
@@ -49,9 +56,30 @@ DOUBLE_Q_SEC = 1.0      # press q twice within this time to quit during a round
 # ---------------------------------------------------------------- arguments
 
 
+RULE_OPTIONS = ("--rounds", "--time", "--sudden-death", "--sd-rate", "--sd-bomb")
+
+
+def warn_unreachable_sudden_death(server_args):
+    """Sudden death counts back from the end of the round, so --time 0 (no limit) never reaches it."""
+    last = {}
+    for k, a in enumerate(server_args):
+        key, eq, v = a.partition("=")
+        if key in ("--time", "--sudden-death", "--sd-rate", "--sd-bomb"):
+            if not eq and k + 1 < len(server_args):
+                v = server_args[k + 1]
+            last[key] = v
+    try:
+        if float(last.get("--time", 120)) == 0 and any(k != "--time" for k in last):
+            print("warning: --time 0 means no time limit, so sudden death never starts "
+                  "(it counts back from the end of the round)", file=sys.stderr)
+    except ValueError:
+        pass
+
+
 def parse_args(argv):
     opts = {"host": None, "port": DEFAULT_PORT, "name": None, "ascii": False, "threat": False,
             "hosting": False, "players": None, "bots": 0, "server_args": []}
+    rules = []      # --rounds / --time / ... given to the client, handed to the server with --host
     env = os.environ.get("BOMBCONSOLE_SERVER")
     if env:
         opts["host"] = env
@@ -90,6 +118,19 @@ def parse_args(argv):
         elif a == "--port" and i + 1 < len(argv):
             opts["port"] = int(argv[i + 1])
             i += 1
+        elif a.split("=", 1)[0] in RULE_OPTIONS:
+            if "=" in a:
+                a, v = a.split("=", 1)
+            elif i + 1 < len(argv):
+                v = argv[i + 1]
+                i += 1
+            else:
+                sys.exit("%s needs a value" % a)
+            try:
+                float(v)
+            except ValueError:
+                sys.exit("%s needs a number, got %r" % (a, v))
+            rules += [a, v]
         elif a.startswith("-"):
             sys.exit("unknown option: " + a)
         else:
@@ -108,9 +149,11 @@ def parse_args(argv):
     if opts["players"] is not None and not opts["hosting"]:
         print("warning: --players only matters with --host; ignored", file=sys.stderr)
         opts["players"] = None
-    if opts["server_args"] and not opts["hosting"]:
-        print("warning: server options after -- only matter with --host; ignored", file=sys.stderr)
+    if (opts["server_args"] or rules) and not opts["hosting"]:
+        print("warning: rule options (--time, --sudden-death, ...) only matter with --host; ignored", file=sys.stderr)
         opts["server_args"] = []
+        rules = []
+    opts["server_args"] = rules + opts["server_args"]       # options after -- win
     opts["auto"] = opts["hosting"] and opts["players"] is not None     # only --players asks for an automatic start
     if opts["hosting"]:
         if opts["players"] is None:
@@ -126,6 +169,7 @@ def parse_args(argv):
         if opts["host"]:
             print("warning: --host starts a local server; the address %s is ignored" % opts["host"], file=sys.stderr)
         opts["host"] = "127.0.0.1"
+        warn_unreachable_sudden_death(opts["server_args"])
     return opts
 
 
